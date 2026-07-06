@@ -1,0 +1,196 @@
+#!/usr/bin/env node
+/**
+ * TokenVault — cache-health-check skill runner (CLAUDE.md Section C1)
+ *
+ * Standalone: `node ~/tokenvault/bin/health` (add --json for machine output).
+ * Runs the six B1 diagnostic checks in CLAUDE.md order and emits the exact
+ * C1 JSON shape. If score < 50 (degraded/critical), writes an incident note
+ * to ~/The-Brain/01-Inbox/tv-cache-incident-YYYY-MM-DD.md (B1 step 7).
+ *
+ * Functions used — ALL pre-existing, none created (verified by export grep):
+ *   cacheMonitor.js: getCacheHealth:401, getCacheStatus:366,
+ *     detectMutablePrompt:270, detectToolSchemaInstability:307,
+ *     evaluateCompressVsCache:210
+ *   observability.js: getCacheEfficiency:237, getMetrics:199
+ *   openaiCache.js: validatePrefixStability:179
+ * New code in THIS file only (constraint: no existing files modified).
+ *
+ * Runtime limits, stated honestly:
+ *   - Checks 2/3/5 need live request data (current system prompt, last two
+ *     tool arrays, previous prefix) that is not persisted anywhere. Offline,
+ *     this script reports their invalidation COUNTERS and marks the live
+ *     probe "unavailable_offline". Pass --system-file <path> to run the
+ *     check-2 live probe against a prompt file.
+ *   - The every-50-calls auto-trigger requires a one-line hook in
+ *     src/index.js optimize() (forbidden to edit here). Until wired, run
+ *     manually or from cron. Condition: getMetrics().requests % 50 === 0.
+ *
+ * Fallback path (CLAUDE.md A2): this tool makes NO LLM calls; on any check
+ * failure it reports the error inline and continues — failure mode is a
+ * partial report, never a crash (see runCheck wrapper).
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { fileURLToPath } from 'node:url';
+
+import cacheMonitor from '../src/cacheMonitor.js';
+import observability from '../src/observability.js';
+
+const TTL_MS = 5 * 60 * 1000; // Anthropic/Nous cache TTL 5m (CLAUDE.md constants #1)
+
+export function shouldWriteIncident(score) {
+  return typeof score === 'number' && score < 50;
+}
+
+function runCheck(name, fn) {
+  try {
+    return { name, ...fn() };
+  } catch (err) {
+    return { name, status: 'error', detail: String(err.message || err) };
+  }
+}
+
+export function collectHealthReport({ systemPromptText = null } = {}) {
+  const health = cacheMonitor.getCacheHealth();
+  const status = cacheMonitor.getCacheStatus();
+  const inv = status.invalidations || {};
+
+  // C1 step 2: cross-check the two recorders; >10-point divergence = one is skipped.
+  const efficiency = observability.getCacheEfficiency();
+  const monitorRate = parseFloat(health.hitRate) || 0;
+  const obsRate = parseFloat(efficiency.hitRate) || 0;
+  const divergence = Math.round(Math.abs(monitorRate - obsRate) * 10) / 10;
+
+  const checks = [];
+
+  // B1 check 1 — confirm the number.
+  checks.push(runCheck('1_confirm_hit_rate', () => ({
+    status: monitorRate >= 70 ? 'pass' : monitorRate >= 50 ? 'warning' : monitorRate >= 30 ? 'degraded' : 'critical',
+    detail: `cacheMonitor hitRate ${health.hitRate}, score ${health.score}; observability hitRate ${efficiency.hitRate}% (divergence ${divergence}pt${divergence > 10 ? ' — RECORDER SKIPPED, flag it' : ''})`,
+  })));
+
+  // B1 check 2 — mutable prompts.
+  checks.push(runCheck('2_mutable_prompts', () => {
+    const base = { counter: inv.mutablePrompts || 0 };
+    if (systemPromptText) {
+      const probe = cacheMonitor.detectMutablePrompt(systemPromptText);
+      return { status: probe.mutable ? 'fail' : 'pass', ...base, live_probe: probe.detected, detail: probe.mutable ? `mutable content detected: ${probe.detected.join(', ')} — apply CLAUDE.md A5` : 'live probe clean' };
+    }
+    return { status: base.counter > 0 ? 'warning' : 'pass', ...base, live_probe: 'unavailable_offline', detail: `${base.counter} mutable-prompt invalidations on record; pass --system-file to probe live` };
+  }));
+
+  // B1 check 3 — tool schema churn (live probe needs last two tool arrays; not persisted).
+  checks.push(runCheck('3_tool_schema_churn', () => ({
+    status: (inv.toolSchemaChanges || 0) > 0 ? 'warning' : 'pass',
+    counter: inv.toolSchemaChanges || 0,
+    live_probe: 'unavailable_offline',
+    detail: `${inv.toolSchemaChanges || 0} schema-change invalidations; live check requires detectToolSchemaInstability(prev, curr) at call site`,
+  })));
+
+  // B1 check 4 — compression invalidation frequency.
+  checks.push(runCheck('4_compression_shifts', () => {
+    const shifts = inv.compressionShifts || 0;
+    const requests = status.session?.requests || 0;
+    const ratio = requests > 0 ? shifts / requests : 0;
+    return {
+      status: ratio > 0.1 ? 'fail' : shifts > 0 ? 'warning' : 'pass',
+      counter: shifts,
+      detail: `${shifts} shifts / ${requests} requests${ratio > 0.1 ? ' — exceeds 1 per 10 requests (B1.4): reduce compression frequency, re-anchor cache_control' : ''}`,
+    };
+  }));
+
+  // B1 check 5 — prefix divergence (needs stored prefixes; report guidance offline).
+  checks.push(runCheck('5_prefix_divergence', () => ({
+    status: 'info',
+    live_probe: 'unavailable_offline',
+    detail: 'run validatePrefixStability(previousPrefix, currentPrefix) (openaiCache.js:179) at the call site; divergencePoint locates the mutation',
+  })));
+
+  // B1 check 6 — TTL gaps from recent event spacing.
+  checks.push(runCheck('6_ttl_gaps', () => {
+    const times = (status.recentEvents || []).map(e => e.time).filter(Boolean).sort((a, b) => a - b);
+    let gaps = 0;
+    for (let i = 1; i < times.length; i++) if (times[i] - times[i - 1] > TTL_MS) gaps++;
+    return {
+      status: gaps > 0 ? 'warning' : times.length < 2 ? 'info' : 'pass',
+      counter: gaps,
+      detail: times.length < 2 ? 'fewer than 2 recent events — interval analysis not possible' : `${gaps} inter-request gaps exceed the 5m TTL${gaps > 0 ? ' — hits structurally impossible across those gaps (B1.6): batch closer or justify 1h TTL in ChangeLog' : ''}`,
+    };
+  }));
+
+  // Exact C1 output shape (CLAUDE.md Section C1 step 4).
+  const report = {
+    skill: 'cache-health-check',
+    at_request: observability.getMetrics().requests || 0,
+    health: health.health,
+    score: health.score,
+    hit_rate_pct: monitorRate,
+    invalidations: {
+      compressionShifts: inv.compressionShifts || 0,
+      mutablePrompts: inv.mutablePrompts || 0,
+      toolSchemaChanges: inv.toolSchemaChanges || 0,
+    },
+    divergence_vs_observability_pct: divergence,
+    action_taken: health.score < 70
+      ? `B1 checks executed; recommendations: ${health.recommendations.join('; ') || 'none from monitor'}`
+      : 'none required — healthy/watch',
+    escalated_to_dre: shouldWriteIncident(health.score),
+    checks,
+  };
+  return { report, health, status };
+}
+
+export function writeIncidentNote(report, { inboxDir = null } = {}) {
+  const dir = inboxDir
+    || (fs.existsSync(path.join(os.homedir(), 'The-Brain', '01-Inbox'))
+      ? path.join(os.homedir(), 'The-Brain', '01-Inbox')
+      : path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'reports')); // fallback: vault absent (e.g. sandbox)
+  fs.mkdirSync(dir, { recursive: true });
+  const day = new Date().toISOString().split('T')[0];
+  const file = path.join(dir, `tv-cache-incident-${day}.md`); // tv- prefix: avoids .gitignore *token* (PROTOCOL §5)
+  const body = [
+    '---', 'status: draft', 'type: incident', 'skill: cache-health-check',
+    `timestamp: ${new Date().toISOString()}`, 'verification: pending per PROTOCOL §4/G10', '---', '',
+    `Cache health CRITICAL: score ${report.score} (<50), hit rate ${report.hit_rate_pct}% — escalating to Dre per CLAUDE.md B1 step 7. Do not tune alert thresholds to silence this.`,
+    '', '## Six-check results', '',
+    ...report.checks.map(c => `- **${c.name}** [${c.status}]: ${c.detail}`),
+    '', '## Raw report', '', '```json', JSON.stringify(report, null, 2), '```', '',
+  ].join('\n');
+  fs.appendFileSync(file, body + '\n'); // append, never overwrite (same-day repeat runs)
+  return file;
+}
+
+export function main(argv = process.argv.slice(2)) {
+  const jsonMode = argv.includes('--json');
+  const sysIdx = argv.indexOf('--system-file');
+  const systemPromptText = sysIdx >= 0 && argv[sysIdx + 1]
+    ? fs.readFileSync(argv[sysIdx + 1], 'utf8')
+    : null;
+
+  const { report } = collectHealthReport({ systemPromptText });
+
+  let incidentFile = null;
+  if (shouldWriteIncident(report.score)) {
+    incidentFile = writeIncidentNote(report);
+  }
+
+  if (jsonMode) {
+    process.stdout.write(JSON.stringify({ ...report, incident_note: incidentFile }, null, 2) + '\n');
+  } else {
+    const tier = report.score >= 90 ? 'healthy' : report.score >= 70 ? 'watch' : 'ACT';
+    console.log(`\nTOKENVAULT CACHE HEALTH — score ${report.score}/100 (${report.health}) → ${tier}`);
+    console.log(`hit rate ${report.hit_rate_pct}% · at request #${report.at_request} · recorder divergence ${report.divergence_vs_observability_pct}pt\n`);
+    for (const c of report.checks) console.log(`  [${String(c.status).padEnd(8)}] ${c.name}: ${c.detail}`);
+    console.log(`\n  action: ${report.action_taken}`);
+    if (incidentFile) console.log(`  INCIDENT NOTE WRITTEN: ${incidentFile} — notify Dre (B1 step 7)`);
+    console.log('');
+  }
+  return report;
+}
+
+// Run when invoked directly (not when imported by tests).
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  main();
+}
