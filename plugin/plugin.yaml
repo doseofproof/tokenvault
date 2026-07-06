@@ -1,0 +1,101 @@
+# TokenVault — Hermes Plugin
+# Token optimization plugin for Hermes Agent
+# Saves 60-90% on AI costs via smart routing, compression, and caching
+
+name: tokenvault
+version: 2.0.0
+description: Token optimization — track, compress, cache, route, and observe to save 60-90% on AI costs
+author: doseofproof
+license: MIT
+category: devops
+
+# Plugin entry point
+entry: src/index.js
+
+# Configuration schema
+config:
+  enabled:
+    type: boolean
+    default: true
+    description: Enable/disable TokenVault optimization
+  maxContextChars:
+    type: number
+    default: 30000
+    description: Maximum context characters per request
+  maxToolOutputChars:
+    type: number
+    default: 4000
+    description: Maximum characters per tool output
+  compressionTarget:
+    type: number
+    default: 0.4
+    description: Target compression ratio (0.4 = compress to 40%)
+  workingMemorySize:
+    type: number
+    default: 5
+    description: L0 working memory — last N messages verbatim
+  sessionMemorySize:
+    type: number
+    default: 20
+    description: L1 session memory — slightly compressed
+  longTermSize:
+    type: number
+    default: 50
+    description: L2 long-term memory — heavily compressed
+  dedupSimilarity:
+    type: number
+    default: 0.80
+    description: MinHash similarity threshold for deduplication
+  reorderEnabled:
+    type: boolean
+    default: true
+    description: Reorder context for primacy/recency bias
+  cacheEnabled:
+    type: boolean
+    default: true
+    description: Enable response caching
+  cacheTtlHours:
+    type: number
+    default: 24
+    description: Cache TTL in hours
+  budgetDaily:
+    type: number
+    default: null
+    description: Daily budget limit in dollars
+  budgetAlertThreshold:
+    type: number
+    default: 0.8
+    description: Alert at this percentage of budget
+
+# Tools provided by this plugin
+tools:
+  - name: tokenvault_stats
+    description: Show token usage statistics and savings
+  - name: tokenvault_route
+    description: Analyze a prompt and route to the optimal model
+  - name: tokenvault_compress
+    description: Compress context using advanced techniques
+  - name: tokenvault_cache_lookup
+    description: Look up cached responses
+  - name: tokenvault_trace
+    description: Record a request trace for observability
+  - name: tokenvault_budget
+    description: Set or check budget limits
+  - name: tokenvault_alerts
+    description: Get recent alerts
+
+# Dependencies
+dependencies:
+  - hermes-agent >= 0.15.0
+
+# Keywords for discovery
+keywords:
+  - tokens
+  - cost
+  - optimization
+  - compression
+  - caching
+  - routing
+  - observability
+  - budget
+  - monitoring
