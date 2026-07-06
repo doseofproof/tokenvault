@@ -1,10 +1,10 @@
 /**
- * TokenVault Tests
+ * TokenVault v2 Tests
  */
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { router, compressor, cache, tracker, budget } from '../src/index.js';
+import { router, compressor, cache, tracker, budget, observability } from '../src/index.js';
 
 describe('Router', () => {
   it('classifies simple tasks', () => {
@@ -49,12 +49,14 @@ describe('Router', () => {
   });
 });
 
-describe('Compressor', () => {
+describe('Compressor v2', () => {
   it('truncates long tool output', () => {
-    const longOutput = 'x'.repeat(5000);
-    const result = compressor.compressToolOutput(longOutput, 'test');
-    assert.ok(result.length < longOutput.length);
-    assert.ok(result.includes('truncated'));
+    // Use realistic line-separated output (like terminal output)
+    const lines = Array.from({length: 200}, (_, i) => 'Line ' + i + ': some output content here that makes this line longer than usual');
+    const longOutput = lines.join('\n');
+    const result = compressor.compressToolOutput(longOutput, 'terminal');
+    assert.ok(result.length < longOutput.length, 'compressed output should be shorter');
+    assert.ok(result.includes('omitted') || result.includes('compressed'), 'should indicate compression happened');
   });
 
   it('does not truncate short output', () => {
@@ -64,37 +66,44 @@ describe('Compressor', () => {
   });
 
   it('deduplicates similar messages', () => {
-    const messages = [
-      { role: 'user', content: 'hello world how are you today' },
-      { role: 'user', content: 'hello world how are you today' },
-      { role: 'user', content: 'completely different message about something else entirely' },
-    ];
+    const messages = Array.from({ length: 10 }, (_, i) => ({
+      role: 'user',
+      content: i < 3 ? 'This is a test message about something specific and unique' : `Completely different message number ${i} about a totally unrelated topic`,
+    }));
     const result = compressor.dedupMessages(messages);
     assert.ok(result.messages.length <= messages.length);
+    assert.ok(result.deduped >= 0);
   });
 
-  it('compresses context', () => {
-    const messages = Array.from({ length: 20 }, (_, i) => ({
+  it('compresses context with memory tiers', () => {
+    const messages = Array.from({ length: 30 }, (_, i) => ({
       role: 'user',
-      content: 'Message ' + i + ' with content about topic ' + (i % 3),
+      content: `Message ${i}: ${i % 3 === 0 ? 'Error occurred in module' : 'Normal conversation about topic ' + i}`,
     }));
     const result = compressor.compressContext(messages);
     assert.ok(result.messages.length <= messages.length);
     assert.ok(result.stats.compressionRatio >= 0);
+    assert.ok(typeof result.stats.tokenSavings === 'number');
+  });
+
+  it('scores importance correctly', () => {
+    const highScore = compressor.scoreImportance('Error: critical bug in authentication module');
+    const lowScore = compressor.scoreImportance('the a an is are was');
+    assert.ok(highScore > lowScore, 'error/critical content should score higher');
   });
 });
 
 describe('Cache', () => {
   it('stores and retrieves responses', () => {
     cache.configure({ enabled: true });
-    cache.store('test prompt 123', 'claude-sonnet-4', 'test response 123');
-    const hit = cache.lookup('test prompt 123', 'claude-sonnet-4');
+    cache.store('test prompt v2', 'claude-sonnet-4', 'test response v2');
+    const hit = cache.lookup('test prompt v2', 'claude-sonnet-4');
     assert.ok(hit);
-    assert.equal(hit.content, 'test response 123');
+    assert.equal(hit.content, 'test response v2');
   });
 
   it('returns null for cache miss', () => {
-    const hit = cache.lookup('nonexistent prompt xyz', 'claude-sonnet-4');
+    const hit = cache.lookup('nonexistent prompt xyz v2', 'claude-sonnet-4');
     assert.equal(hit, null);
   });
 
@@ -107,8 +116,8 @@ describe('Cache', () => {
 
 describe('Tracker', () => {
   it('starts a session', () => {
-    const id = tracker.startSession('test_session_1');
-    assert.equal(id, 'test_session_1');
+    const id = tracker.startSession('test_session_v2');
+    assert.equal(id, 'test_session_v2');
   });
 
   it('records usage', () => {
@@ -148,5 +157,52 @@ describe('Budget', () => {
     const status = budget.getStatus();
     assert.ok(status);
     assert.ok(Array.isArray(status.alerts));
+  });
+});
+
+describe('Observability', () => {
+  it('records traces', () => {
+    const trace = observability.trace({
+      requestId: 'test_trace_1',
+      agent: 'test_agent',
+      model: 'claude-sonnet-4',
+      operation: 'test_op',
+      inputTokens: 100,
+      outputTokens: 50,
+      latencyMs: 150,
+      cached: false,
+    });
+    assert.ok(trace);
+    assert.ok(trace.id);
+    assert.equal(trace.model, 'claude-sonnet-4');
+  });
+
+  it('gets metrics', () => {
+    const metrics = observability.getMetrics();
+    assert.ok(typeof metrics.requests === 'number');
+    assert.ok(typeof metrics.totalCost === 'number');
+    assert.ok(typeof metrics.avgLatency === 'number');
+  });
+
+  it('gets agent costs', () => {
+    const agents = observability.getAgentCosts();
+    assert.ok(Array.isArray(agents));
+  });
+
+  it('gets hourly trend', () => {
+    const trend = observability.getHourlyTrend();
+    assert.ok(Array.isArray(trend));
+    assert.equal(trend.length, 24);
+  });
+
+  it('gets cache efficiency', () => {
+    const eff = observability.getCacheEfficiency();
+    assert.ok(typeof eff.hits === 'number');
+    assert.ok(typeof eff.hitRate === 'string');
+  });
+
+  it('gets traces', () => {
+    const traces = observability.getTraces();
+    assert.ok(Array.isArray(traces));
   });
 });

@@ -1,23 +1,30 @@
 #!/usr/bin/env node
 
 /**
- * TokenVault CLI — Dashboard for token savings
+ * TokenVault CLI v2 — Dashboard for token savings + observability
  * 
- * Usage:
+ * Core:
  *   tokenvault stats          — Show savings summary
  *   tokenvault daily          — Daily breakdown
  *   tokenvault models         — Per-model usage
- *   tokenvault cache          — Cache stats
  *   tokenvault route <prompt> — Show how a prompt would be routed
+ *   tokenvault cache          — Cache stats
+ *   tokenvault budget         — Budget status
+ *   tokenvault on/off         — Enable/disable optimization
  *   tokenvault clear          — Clear cache and reset stats
- *   tokenvault on             — Enable token optimization
- *   tokenvault off            — Disable token optimization
+ * 
+ * Observability:
+ *   tokenvault traces         — Recent request traces
+ *   tokenvault agents         — Per-agent cost breakdown
+ *   tokenvault hourly         — Hourly cost trend (24h)
+ *   tokenvault alerts         — Recent alerts
+ *   tokenvault alert <rule>   — Set alert rule
  */
 
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { router } from '../src/index.js';
+import { router, observability, compressor } from '../src/index.js';
 
 const DATA_DIR = path.join(os.homedir(), '.hermes', 'tokenvault');
 const USAGE_FILE = path.join(DATA_DIR, 'usage.json');
@@ -25,74 +32,56 @@ const CACHE_DIR = path.join(DATA_DIR, 'cache');
 const CACHE_INDEX = path.join(CACHE_DIR, 'index.json');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 
-// Colors
 const C = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  red: '\x1b[31m',
-  cyan: '\x1b[36m',
-  magenta: '\x1b[35m',
-  white: '\x1b[37m',
-  gray: '\x1b[90m',
+  reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m',
+  green: '\x1b[32m', yellow: '\x1b[33m', red: '\x1b[31m',
+  cyan: '\x1b[36m', magenta: '\x1b[35m', white: '\x1b[37m', gray: '\x1b[90m',
 };
 
 function loadUsage() {
-  try {
-    return JSON.parse(fs.readFileSync(USAGE_FILE, 'utf8'));
-  } catch {
-    return { sessions: {}, daily: {}, totals: { input: 0, output: 0, cost: 0, saved: 0 } };
-  }
+  try { return JSON.parse(fs.readFileSync(USAGE_FILE, 'utf8')); }
+  catch { return { sessions: {}, daily: {}, totals: { input: 0, output: 0, cost: 0, saved: 0 } }; }
 }
-
 function loadCacheIndex() {
-  try {
-    return JSON.parse(fs.readFileSync(CACHE_INDEX, 'utf8'));
-  } catch {
-    return {};
-  }
+  try { return JSON.parse(fs.readFileSync(CACHE_INDEX, 'utf8')); }
+  catch { return {}; }
 }
-
 function loadConfig() {
-  try {
-    return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-  } catch {
-    return { enabled: true };
-  }
+  try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); }
+  catch { return { enabled: true }; }
 }
-
 function saveConfig(cfg) {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
 }
-
-function fmt(n, decimals = 2) {
+function fmt(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
-  return n.toFixed(decimals);
+  return n.toFixed(0);
 }
-
 function fmtCost(n) {
   if (n === 0) return '$0.00';
   if (n < 0.01) return `$${n.toFixed(4)}`;
   return `$${n.toFixed(2)}`;
 }
-
 function bar(pct, width = 20) {
   const filled = Math.round(pct / 100 * width);
   return C.green + '█'.repeat(filled) + C.gray + '░'.repeat(width - filled) + C.reset;
 }
 
+// ═══════════════════════════════════════════════════════════
+// Commands
+// ═══════════════════════════════════════════════════════════
+
 function showStats() {
   const usage = loadUsage();
   const cache = loadCacheIndex();
   const totals = usage.totals;
+  const metrics = observability.getMetrics();
   
   console.log(`
 ${C.bold}${C.cyan}╔══════════════════════════════════════════════════╗
-║           🪙 TOKENVAULT — TOKEN SAVER            ║
+║           🪙 TOKENVAULT v2 — TOKEN SAVER          ║
 ╚══════════════════════════════════════════════════╝${C.reset}
 
 ${C.bold} TOTALS${C.reset}
@@ -104,37 +93,32 @@ ${C.bold} TOTALS${C.reset}
  ${C.white}Cache entries:${C.reset}   ${Object.keys(cache).length}
 
 ${C.bold} TODAY${C.reset}`);
-  
   const today = new Date().toISOString().split('T')[0];
   const d = usage.daily[today] || { input: 0, output: 0, cost: 0, saved: 0, calls: 0 };
   console.log(` ${C.white}Tokens used:${C.reset}     ${fmt(d.input + d.output)} (${d.calls} calls)`);
   console.log(` ${C.white}Cost:${C.reset}            ${C.yellow}${fmtCost(d.cost)}${C.reset}`);
   console.log(` ${C.white}Saved:${C.reset}           ${C.green}${fmtCost(d.saved)}${C.reset}`);
-  
   if (d.cost + d.saved > 0) {
     const savePct = ((d.saved / (d.cost + d.saved)) * 100).toFixed(0);
     console.log(` ${C.white}Savings rate:${C.reset}    ${C.green}${bar(savePct)} ${savePct}%${C.reset}`);
   }
   
-  console.log(`
-${C.dim} Data: ${DATA_DIR}${C.reset}
-`);
+  console.log(`\n${C.bold} OBSERVABILITY${C.reset}`);
+  console.log(` ${C.white}Requests:${C.reset}       ${metrics.requests}`);
+  console.log(` ${C.white}Avg latency:${C.reset}    ${metrics.avgLatency.toFixed(0)}ms`);
+  console.log(` ${C.white}Errors:${C.reset}          ${C.red}${metrics.errors}${C.reset}`);
+  console.log(` ${C.white}Cache hits:${C.reset}     ${metrics.cacheHits}`);
+  console.log(`\n ${C.dim}Data: ${DATA_DIR}${C.reset}\n`);
 }
 
 function showDaily() {
   const usage = loadUsage();
-  const days = Object.entries(usage.daily)
-    .sort(([a], [b]) => b.localeCompare(a))
-    .slice(0, 14);
-  
+  const days = Object.entries(usage.daily).sort(([a], [b]) => b.localeCompare(a)).slice(0, 14);
   console.log(`\n${C.bold}${C.cyan} TOKENVAULT — Daily Breakdown${C.reset}\n`);
   console.log(`${C.dim} Date        Calls   Input      Output     Cost      Saved${C.reset}`);
   console.log(`${C.dim} ─────────── ─────── ────────── ────────── ───────── ─────────${C.reset}`);
-  
   for (const [date, d] of days) {
-    console.log(
-      ` ${date}   ${String(d.calls).padStart(5)}   ${fmt(d.input).padStart(8)}  ${fmt(d.output).padStart(8)}  ${fmtCost(d.cost).padStart(7)}  ${C.green}${fmtCost(d.saved).padStart(7)}${C.reset}`
-    );
+    console.log(` ${date}   ${String(d.calls).padStart(5)}   ${fmt(d.input).padStart(8)}  ${fmt(d.output).padStart(8)}  ${fmtCost(d.cost).padStart(7)}  ${C.green}${fmtCost(d.saved).padStart(7)}${C.reset}`);
   }
   console.log('');
 }
@@ -142,7 +126,6 @@ function showDaily() {
 function showModels() {
   const usage = loadUsage();
   const models = {};
-  
   for (const session of Object.values(usage.sessions)) {
     for (const [model, data] of Object.entries(session.models || {})) {
       if (!models[model]) models[model] = { input: 0, output: 0, cost: 0, calls: 0 };
@@ -152,32 +135,20 @@ function showModels() {
       models[model].calls += data.calls;
     }
   }
-  
   console.log(`\n${C.bold}${C.cyan} TOKENVAULT — Model Usage${C.reset}\n`);
   console.log(`${C.dim} Model               Calls   Input      Output     Cost${C.reset}`);
   console.log(`${C.dim} ─────────────────── ─────── ────────── ────────── ─────────${C.reset}`);
-  
   const sorted = Object.entries(models).sort((a, b) => b[1].cost - a[1].cost);
   for (const [model, data] of sorted) {
-    console.log(
-      ` ${model.padEnd(19)} ${String(data.calls).padStart(5)}   ${fmt(data.input).padStart(8)}  ${fmt(data.output).padStart(8)}  ${C.yellow}${fmtCost(data.cost).padStart(7)}${C.reset}`
-    );
+    console.log(` ${model.padEnd(19)} ${String(data.calls).padStart(5)}   ${fmt(data.input).padStart(8)}  ${fmt(data.output).padStart(8)}  ${C.yellow}${fmtCost(data.cost).padStart(7)}${C.reset}`);
   }
   console.log('');
 }
 
 function showRoute(prompt) {
-  // Use the router module directly
   const { classifyTask, selectModel, MODEL_TIERS } = router;
-  
   const tier = classifyTask(prompt);
   const model = selectModel(prompt, 'claude-sonnet-4');
-  
-  // Calculate savings
-  const inputTokens = 2000;
-  const outputTokens = 1000;
-  const premiumCost = (inputTokens * 3 + outputTokens * 15) / 1_000_000;
-  const modelCost = (inputTokens * 0.25 + outputTokens * 1.25) / 1_000_000;
   const savingsPct = tier === 'simple' ? '~90%' : tier === 'medium' ? '~70%' : '~0%';
   
   console.log(`\n${C.bold}${C.cyan} TOKENVAULT — Route Analysis${C.reset}\n`);
@@ -187,33 +158,125 @@ function showRoute(prompt) {
   console.log(` ${C.white}Savings:${C.reset}     ${C.green}${savingsPct}${C.reset} vs premium model\n`);
 }
 
+function showCache() {
+  const cache = loadCacheIndex();
+  const entries = Object.values(cache);
+  const hits = entries.reduce((s, e) => s + (e.hits || 0), 0);
+  const totalSize = entries.reduce((s, e) => s + (e.responseSize || 0), 0);
+  console.log(`\n${C.bold}${C.cyan} TOKENVAULT — Cache Stats${C.reset}\n`);
+  console.log(` ${C.white}Entries:${C.reset}      ${entries.length}`);
+  console.log(` ${C.white}Total hits:${C.reset}    ${hits}`);
+  console.log(` ${C.white}Avg hits/entry:${C.reset} ${entries.length > 0 ? (hits / entries.length).toFixed(1) : 0}`);
+  console.log(` ${C.white}Total size:${C.reset}    ${(totalSize / 1024).toFixed(1)}KB\n`);
+}
+
+function showBudget() {
+  const budgetFile = path.join(DATA_DIR, 'budget.json');
+  let b = { daily: null, weekly: null, monthly: null, alertThreshold: 0.8 };
+  try { if (fs.existsSync(budgetFile)) b = JSON.parse(fs.readFileSync(budgetFile, 'utf8')); } catch {}
+  const usage = loadUsage();
+  const today = new Date().toISOString().split('T')[0];
+  const todayCost = (usage.daily[today] || { cost: 0 }).cost;
+  
+  console.log(`\n${C.bold}${C.cyan} TOKENVAULT — Budget Status${C.reset}\n`);
+  if (b.daily) {
+    const pct = (todayCost / b.daily * 100).toFixed(0);
+    console.log(` ${C.white}Daily:${C.reset}       ${fmtCost(todayCost)} / ${fmtCost(b.daily)} (${pct}%)`);
+    console.log(`           ${pct >= 80 ? C.red : C.green}${bar(parseInt(pct))}${C.reset}`);
+  } else {
+    console.log(` ${C.white}Daily limit:${C.reset}   not set`);
+  }
+  console.log(` ${C.white}Alert at:${C.reset}       ${(b.alertThreshold * 100).toFixed(0)}%\n`);
+}
+
+function showTraces() {
+  const traces = observability.getTraces(null, 20);
+  console.log(`\n${C.bold}${C.cyan} TOKENVAULT — Recent Traces${C.reset}\n`);
+  if (traces.length === 0) { console.log(` ${C.dim}No traces yet${C.reset}\n`); return; }
+  console.log(`${C.dim} Time       Model               Latency   Tokens  Cost     Cached${C.reset}`);
+  console.log(`${C.dim} ────────── ─────────────────── ───────── ─────── ──────── ───────${C.reset}`);
+  for (const t of traces.reverse()) {
+    const time = t.time ? new Date(t.time).toLocaleTimeString() : '?';
+    const model = (t.model || '?').substring(0, 17).padEnd(17);
+    const tokens = (t.inputTokens || 0) + (t.outputTokens || 0);
+    console.log(` ${time.padEnd(10)} ${model} ${(t.latencyMs || 0).toFixed(0).padStart(7)}ms ${fmt(tokens).padStart(5)}  ${fmtCost(t.cost || 0).padStart(6)}  ${t.cached ? C.green + 'yes' + C.reset : C.dim + 'no' + C.reset}`);
+  }
+  console.log('');
+}
+
+function showAgents() {
+  const agents = observability.getAgentCosts();
+  console.log(`\n${C.bold}${C.cyan} TOKENVAULT — Agent Costs${C.reset}\n`);
+  if (agents.length === 0) { console.log(` ${C.dim}No agent data yet${C.reset}\n`); return; }
+  console.log(`${C.dim} Agent             Requests   Tokens      Cost       Saved${C.reset}`);
+  console.log(`${C.dim} ───────────────── ────────── ─────────── ────────── ──────────${C.reset}`);
+  for (const a of agents) {
+    console.log(` ${a.name.padEnd(17)} ${String(a.requests).padStart(8)}   ${fmt(a.tokens).padStart(9)}  ${fmtCost(a.cost).padStart(8)}  ${C.green}${fmtCost(a.saved).padStart(8)}${C.reset}`);
+  }
+  console.log('');
+}
+
+function showHourly() {
+  const trend = observability.getHourlyTrend();
+  console.log(`\n${C.bold}${C.cyan} TOKENVAULT — Hourly Cost Trend (24h)${C.reset}\n`);
+  const maxCost = Math.max(...trend.map(h => h.cost), 0.01);
+  for (const h of trend) {
+    const hour = new Date(h.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const width = Math.round((h.cost / maxCost) * 30);
+    console.log(` ${hour} ${C.cyan}${'█'.repeat(width)}${C.reset} ${fmtCost(h.cost).padStart(8)} ${C.dim}(${h.requests} req)${C.reset}`);
+  }
+  console.log('');
+}
+
+function showAlerts() {
+  const alerts = observability.getAlerts(20);
+  console.log(`\n${C.bold}${C.cyan} TOKENVAULT — Recent Alerts${C.reset}\n`);
+  if (alerts.length === 0) { console.log(` ${C.green}No alerts — all clear${C.reset}\n`); return; }
+  for (const a of alerts.reverse()) {
+    const time = new Date(a.time).toLocaleString();
+    const icon = a.level === 'critical' ? C.red + '🔴' : C.yellow + '⚠️';
+    console.log(` ${icon} ${C.dim}${time}${C.reset} ${a.message}`);
+  }
+  console.log('');
+}
+
 function showHelp() {
   console.log(`
-${C.bold}${C.cyan} TokenVault — Token optimization for Hermes Agent${C.reset}
+${C.bold}${C.cyan} TokenVault v2 — Token optimization + observability for Hermes Agent${C.reset}
 
 ${C.bold} USAGE:${C.reset}
-  ${C.white}tokenvault stats${C.reset}          Show savings summary
-  ${C.white}tokenvault daily${C.reset}          Daily breakdown (last 14 days)
-  ${C.white}tokenvault models${C.reset}         Per-model usage breakdown
-  ${C.white}tokenvault cache${C.reset}          Cache hit/miss stats
-  ${C.white}tokenvault route "prompt"${C.reset}  Show how a prompt would be routed
-  ${C.white}tokenvault on${C.reset}             Enable optimization
-  ${C.white}tokenvault off${C.reset}            Disable optimization
-  ${C.white}tokenvault clear${C.reset}          Clear cache and reset stats
-  ${C.white}tokenvault help${C.reset}           Show this help
+  ${C.white}tokenvault stats${C.reset}              Show savings summary
+  ${C.white}tokenvault daily${C.reset}              Daily breakdown (14 days)
+  ${C.white}tokenvault models${C.reset}             Per-model usage
+  ${C.white}tokenvault cache${C.reset}              Cache hit/miss stats
+  ${C.white}tokenvault route "prompt"${C.reset}      Analyze prompt routing
+  ${C.white}tokenvault budget${C.reset}             Budget status
+  ${C.white}tokenvault budget daily=5.00${C.reset}   Set budget limit
+  ${C.white}tokenvault on/off${C.reset}             Enable/disable optimization
+  ${C.white}tokenvault clear${C.reset}              Clear cache and stats
+
+${C.bold} OBSERVABILITY:${C.reset}
+  ${C.white}tokenvault traces${C.reset}             Recent request traces
+  ${C.white}tokenvault agents${C.reset}             Per-agent cost breakdown
+  ${C.white}tokenvault hourly${C.reset}             Hourly cost trend (24h)
+  ${C.white}tokenvault alerts${C.reset}             Recent alerts
 
 ${C.bold} WHAT IT SAVES:${C.reset}
   • Auto-routes simple tasks to cheap models (saves 60-90%)
-  • Compresses context before sending to LLMs
-  • Caches repeated queries (zero cost on hits)
-  • Tracks every token and dollar across all sessions
+  • LLMLingua-style context compression (5-20x reduction)
+  • Hierarchical memory (L0/L1/L2 tiers)
+  • Response caching (zero cost on hits)
+  • Per-request tracing + agent cost attribution
+  • Real-time budget alerts
 
-${C.bold} DATA:${C.reset}
-  ${C.dim}${DATA_DIR}${C.reset}
+${C.dim} Data: ${DATA_DIR}${C.reset}
 `);
 }
 
+// ═══════════════════════════════════════════════════════════
 // Main
+// ═══════════════════════════════════════════════════════════
+
 const cmd = process.argv[2] || 'stats';
 const arg = process.argv.slice(3).join(' ');
 
@@ -222,68 +285,33 @@ switch (cmd) {
   case 'daily': showDaily(); break;
   case 'models': showModels(); break;
   case 'route': showRoute(arg || 'hello'); break;
-  case 'cache': {
-    const cache = loadCacheIndex();
-    const entries = Object.values(cache);
-    const hits = entries.reduce((s, e) => s + (e.hits || 0), 0);
-    console.log(`\n${C.bold}${C.cyan} TOKENVAULT — Cache Stats${C.reset}\n`);
-    console.log(` ${C.white}Entries:${C.reset}   ${entries.length}`);
-    console.log(` ${C.white}Total hits:${C.reset} ${hits}`);
-    console.log(` ${C.white}Avg hits/entry:${C.reset} ${entries.length > 0 ? (hits / entries.length).toFixed(1) : 0}\n`);
-    break;
-  }
-  case 'on': {
-    const cfg = loadConfig();
-    cfg.enabled = true;
-    saveConfig(cfg);
-    console.log(`${C.green}✓ TokenVault enabled${C.reset}`);
-    break;
-  }
-  case 'off': {
-    const cfg = loadConfig();
-    cfg.enabled = false;
-    saveConfig(cfg);
-    console.log(`${C.yellow}○ TokenVault disabled${C.reset}`);
-    break;
-  }
+  case 'cache': showCache(); break;
   case 'budget': {
-    const budgetFile = path.join(os.homedir(), '.hermes', 'tokenvault', 'budget.json');
-    let b = { daily: null, weekly: null, monthly: null, alertThreshold: 0.8 };
-    try { if (fs.existsSync(budgetFile)) b = JSON.parse(fs.readFileSync(budgetFile, 'utf8')); } catch {}
-    
-    if (!arg) {
-      console.log(`\n${C.bold}${C.cyan} TOKENVAULT — Budget Status${C.reset}\n`);
-      console.log(` ${C.white}Daily limit:${C.reset}   ${b.daily ? '$' + b.daily.toFixed(2) : 'not set'}`);
-      console.log(` ${C.white}Weekly limit:${C.reset}  ${b.weekly ? '$' + b.weekly.toFixed(2) : 'not set'}`);
-      console.log(` ${C.white}Monthly limit:${C.reset} ${b.monthly ? '$' + b.monthly.toFixed(2) : 'not set'}`);
-      console.log(` ${C.white}Alert at:${C.reset}       ${(b.alertThreshold * 100).toFixed(0)}%\n`);
-    } else {
+    if (arg && arg.includes('=')) {
       const [key, val] = arg.split('=');
-      if (key && val) {
-        b[key] = parseFloat(val);
-        if (!fs.existsSync(path.dirname(budgetFile))) fs.mkdirSync(path.dirname(budgetFile), { recursive: true });
-        fs.writeFileSync(budgetFile, JSON.stringify(b, null, 2));
-        console.log(`${C.green}✓ Budget set: ${key} = $${parseFloat(val).toFixed(2)}${C.reset}`);
-      } else {
-        console.log(`${C.yellow}Usage: tokenvault budget daily=5.00${C.reset}`);
-      }
-    }
+      const budgetFile = path.join(DATA_DIR, 'budget.json');
+      let b = { daily: null, weekly: null, monthly: null, alertThreshold: 0.8 };
+      try { if (fs.existsSync(budgetFile)) b = JSON.parse(fs.readFileSync(budgetFile, 'utf8')); } catch {}
+      b[key] = parseFloat(val);
+      if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.writeFileSync(budgetFile, JSON.stringify(b, null, 2));
+      console.log(`${C.green}✓ Budget set: ${key} = $${parseFloat(val).toFixed(2)}${C.reset}`);
+    } else { showBudget(); }
     break;
   }
+  case 'on': { const c = loadConfig(); c.enabled = true; saveConfig(c); console.log(`${C.green}✓ TokenVault enabled${C.reset}`); break; }
+  case 'off': { const c = loadConfig(); c.enabled = false; saveConfig(c); console.log(`${C.yellow}○ TokenVault disabled${C.reset}`); break; }
+  case 'traces': showTraces(); break;
+  case 'agents': showAgents(); break;
+  case 'hourly': showHourly(); break;
+  case 'alerts': showAlerts(); break;
   case 'clear': {
-    const dataDir = path.join(os.homedir(), '.hermes', 'tokenvault');
-    if (fs.existsSync(path.join(dataDir, 'usage.json'))) fs.unlinkSync(path.join(dataDir, 'usage.json'));
-    const cacheDir = path.join(dataDir, 'cache');
-    if (fs.existsSync(cacheDir)) {
-      for (const f of fs.readdirSync(cacheDir)) {
-        fs.unlinkSync(path.join(cacheDir, f));
-      }
-    }
+    if (fs.existsSync(path.join(DATA_DIR, 'usage.json'))) fs.unlinkSync(path.join(DATA_DIR, 'usage.json'));
+    const cacheDir = path.join(DATA_DIR, 'cache');
+    if (fs.existsSync(cacheDir)) { for (const f of fs.readdirSync(cacheDir)) fs.unlinkSync(path.join(cacheDir, f)); }
     console.log(`${C.green}✓ Cache and stats cleared${C.reset}`);
     break;
   }
   case 'help': case '--help': case '-h': showHelp(); break;
-  default:
-    console.log(`Unknown command: ${cmd}`);
-    showHelp();
+  default: console.log(`Unknown command: ${cmd}`); showHelp();
 }

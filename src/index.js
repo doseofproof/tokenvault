@@ -1,16 +1,16 @@
 /**
- * TokenVault — Main plugin entry point
+ * TokenVault — Main plugin entry point v2
  * 
  * Token optimization plugin for Hermes Agent.
- * Tracks, compresses, caches, and routes to save 60-90% on AI costs.
+ * Tracks, compresses, caches, routes, and observes to save 60-90% on AI costs.
  * 
- * Usage in Hermes:
- *   - Register as a plugin in config.yaml
- *   - Auto-hooks into LLM calls for optimization
- *   - CLI: `tokenvault stats` for dashboard
- * 
- * Usage standalone:
- *   import { tracker, router, compressor, cache } from './index.js';
+ * Modules:
+ * - tracker: Real-time token usage tracking
+ * - router: Smart model routing (simple→cheap, hard→premium)
+ * - compressor: Advanced context compression (LLMLingua-style, hierarchical memory)
+ * - cache: Response caching (content-hash + semantic)
+ * - budget: Spending alerts
+ * - observability: Tracing, metrics, alerting
  */
 
 import tracker from './tracker.js';
@@ -18,21 +18,29 @@ import router from './router.js';
 import compressor from './compressor.js';
 import cache from './cache.js';
 import budget from './budget.js';
+import observability from './observability.js';
 
-export { tracker, router, compressor, cache, budget };
+export { tracker, router, compressor, cache, budget, observability };
 
 /**
- * Process a prompt through the optimization pipeline
- * Returns { model, cached, compressed }
+ * Process a prompt through the full optimization pipeline
+ * 
+ * Pipeline:
+ * 1. Check cache (zero-cost on hit)
+ * 2. Classify task complexity
+ * 3. Route to optimal model
+ * 4. Compress context (dedup + tiers + reorder + trim)
+ * 5. Record trace for observability
  */
-export function optimize({ prompt, currentModel, context }) {
+export function optimize({ prompt, currentModel, context, agent, operation }) {
+  const startTime = Date.now();
   const result = {
     model: currentModel,
     cached: false,
     response: null,
-    contextOriginal: context?.length || 0,
-    contextCompressed: 0,
+    compression: null,
     savings: 0,
+    trace: null,
   };
   
   // Step 1: Check cache
@@ -41,6 +49,7 @@ export function optimize({ prompt, currentModel, context }) {
     result.cached = true;
     result.response = cached.content;
     result.savings = tracker.estimateCost(currentModel, 2000, 1000);
+    
     tracker.recordUsage({
       model: currentModel,
       inputTokens: 0,
@@ -48,6 +57,17 @@ export function optimize({ prompt, currentModel, context }) {
       operation: 'cache_hit',
       cached: true,
     });
+    
+    observability.trace({
+      agent,
+      model: currentModel,
+      operation: operation || 'cache_hit',
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: Date.now() - startTime,
+      cached: true,
+    });
+    
     return result;
   }
   
@@ -59,9 +79,19 @@ export function optimize({ prompt, currentModel, context }) {
   // Step 3: Compress context if provided
   if (context && context.length > 0) {
     const { messages, stats } = compressor.compressContext(context);
-    result.contextCompressed = messages.length;
-    result.compressionStats = stats;
+    result.compression = stats;
   }
+  
+  // Step 4: Record trace
+  result.trace = observability.trace({
+    agent,
+    model: result.model,
+    operation: operation || 'llm_call',
+    inputTokens: prompt.length / 4, // rough estimate
+    outputTokens: 0,
+    latencyMs: Date.now() - startTime,
+    cached: false,
+  });
   
   return result;
 }
@@ -69,22 +99,36 @@ export function optimize({ prompt, currentModel, context }) {
 /**
  * Record the outcome of an LLM call
  */
-export function record({ model, inputTokens, outputTokens, operation, response, prompt }) {
+export function record({ model, inputTokens, outputTokens, operation, response, prompt, agent, latencyMs }) {
   tracker.recordUsage({ model, inputTokens, outputTokens, operation });
   
-  // Cache the response for future lookups
+  // Cache the response
   if (response && prompt) {
     cache.store(prompt, model, response, { inputTokens, outputTokens });
   }
+  
+  // Record trace
+  observability.trace({
+    agent,
+    model,
+    operation,
+    inputTokens,
+    outputTokens,
+    latencyMs: latencyMs || 0,
+    cached: false,
+  });
 }
 
 /**
- * Get a summary of potential savings
+ * Get a comprehensive savings report
  */
 export function getSavingsReport() {
   const totals = tracker.getTotals();
   const cacheStats = cache.getStats();
   const daily = tracker.getDailyStats(7);
+  const metrics = observability.getMetrics();
+  const cacheEfficiency = observability.getCacheEfficiency();
+  const agents = observability.getAgentCosts();
   
   return {
     totalCost: totals.cost || 0,
@@ -94,15 +138,20 @@ export function getSavingsReport() {
       : 0,
     cacheEntries: cacheStats.entries,
     cacheHits: cacheStats.totalHits,
+    cacheHitRate: cacheEfficiency.hitRate,
     dailyAverage: daily.length > 0
       ? daily.reduce((s, d) => s + d.cost, 0) / daily.length
       : 0,
+    requests: metrics.requests,
+    avgLatency: metrics.avgLatency.toFixed(0),
+    errors: metrics.errors,
+    topAgents: agents.slice(0, 5),
   };
 }
 
 export default {
   name: 'tokenvault',
-  version: '1.0.0',
+  version: '2.0.0',
   optimize,
   record,
   getSavingsReport,
@@ -110,4 +159,6 @@ export default {
   router,
   compressor,
   cache,
+  budget,
+  observability,
 };
