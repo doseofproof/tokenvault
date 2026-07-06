@@ -14,19 +14,34 @@ import promptCache, {
 const { PROVIDER_CONFIGS } = promptCache;
 
 describe('Prompt Cache — Anthropic', () => {
-  it('uses automatic caching with top-level cache_control', () => {
+  it('uses block-level cache_control, never top-level (audit Bug 3 regression)', () => {
     const result = buildAnthropicMessages({
       system: 'You are a helpful assistant.',
       messages: [{ role: 'user', content: 'hello' }],
       tools: [{ name: 'tool1', description: 'First tool' }],
     });
-    // Automatic caching: cache_control at request level
-    assert.ok(result.cache_control);
-    assert.equal(result.cache_control.type, 'ephemeral');
-    // System, messages, tools passed through unchanged
-    assert.equal(result.system, 'You are a helpful assistant.');
+    // Top-level cache_control is NOT part of the Anthropic Messages API.
+    assert.equal(result.cache_control, undefined);
+    // System becomes a block array; last block carries the marker.
+    assert.ok(Array.isArray(result.system));
+    const lastSystem = result.system[result.system.length - 1];
+    assert.equal(lastSystem.cache_control.type, 'ephemeral');
+    assert.equal(lastSystem.text, 'You are a helpful assistant.');
     assert.equal(result.messages.length, 1);
     assert.equal(result.tools.length, 1);
+  });
+
+  it('sorts tools alphabetically (CLAUDE.md A6 regression)', () => {
+    const result = buildAnthropicMessages({
+      system: 'You are helpful.',
+      messages: [],
+      tools: [
+        { name: 'zeta_tool', description: 'Z' },
+        { name: 'alpha_tool', description: 'A' },
+      ],
+    });
+    assert.equal(result.tools[0].name, 'alpha_tool');
+    assert.equal(result.tools[1].name, 'zeta_tool');
   });
 
   it('includes cache markers', () => {
@@ -35,7 +50,7 @@ describe('Prompt Cache — Anthropic', () => {
       messages: [{ role: 'user', content: 'hello' }],
     });
     assert.ok(result.cacheMarkers.length > 0);
-    assert.ok(result.cacheMarkers.find(m => m.type === 'automatic'));
+    assert.ok(result.cacheMarkers.find(m => m.type === 'block'));
   });
 });
 
@@ -80,6 +95,12 @@ describe('Prompt Cache — Usage Parsing', () => {
     assert.equal(result.cacheRead, 200);
     assert.ok(result.cacheHit);
     assert.ok(result.savings > 0);
+    // 1000x-overstatement regression (audit 2026-07-06 §3.3): savings for
+    // 200 cached tokens at $3/M with 90% discount = 200 * 0.9 * 3/1e6 = $0.00054.
+    // Savings can never exceed the full input cost of the cached tokens.
+    assert.ok(result.savings < 200 * (3.00 / 1_000_000),
+      `savings $${result.savings} exceeds full cost of cached tokens — unit bug`);
+    assert.ok(Math.abs(result.savings - 0.00054) < 1e-9);
   });
 
   it('parses OpenAI cache usage', () => {

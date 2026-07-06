@@ -61,16 +61,40 @@ const PROVIDER_CONFIGS = {
  * so we cache everything up to the user's message.
  */
 export function buildAnthropicMessages({ system, messages, tools }) {
-  // Use AUTOMATIC caching (top-level cache_control)
-  // System prompt + tools must be >1024 tokens for caching to work
+  // BLOCK-LEVEL cache_control per the Anthropic Messages API contract.
+  // The previous top-level `cache_control` key was Bug 3 in
+  // The-Brain/reports/architecture-audit-2026-07-06.md: it is not part of the
+  // API and never activated caching (live state file showed 38.1% hit rate,
+  // consistent with partial/other-layer caching, not the claimed 88%).
+  // Marker placement: last system block. Anthropic request order is
+  // tools -> system -> messages, so one marker on the final system block
+  // caches the tool definitions AND the system prompt in a single prefix.
+  // System + tools must still total >= 1024 tokens (PROVIDER_CONFIGS.anthropic).
+  // Fallback path (CLAUDE.md A2): on provider error the request is retried via
+  // fallback_model in ~/.hermes/config.yaml (deepseek-v4-flash / opencode-go).
   const result = {
-    system,
-    messages,
-    tools,
-    cache_control: { type: 'ephemeral' },  // Automatic caching
-    cacheMarkers: [{ type: 'automatic', description: 'System + tools cached automatically' }],
+    messages: messages || [],
+    cacheMarkers: [],
   };
-  
+
+  if (tools && tools.length > 0) {
+    // Deterministic alphabetical ordering (CLAUDE.md A6) — matches
+    // buildOpenAIMessages (openaiCache.js) and buildNIMRequest (nimCache.js).
+    result.tools = [...tools].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  if (system) {
+    const systemText = typeof system === 'string' ? system : JSON.stringify(system);
+    result.system = [
+      { type: 'text', text: systemText, cache_control: { type: 'ephemeral' } },
+    ];
+    result.cacheMarkers.push({
+      type: 'block',
+      location: 'system[last]',
+      description: 'Caches tools + system prefix via marker on final system block',
+    });
+  }
+
   return result;
 }
 
@@ -128,9 +152,11 @@ export function parseCacheUsage(response, provider) {
     result.cacheRead = usage.cache_read_input_tokens || 0;
     result.cacheHit = result.cacheRead > 0;
     
-    // Calculate savings
+    // Calculate savings. $3.00 per 1M input tokens => 3.00 / 1_000_000 per token.
+    // Regression note: this line previously used 0.003 (per-1K rate applied
+    // per-token), overstating savings 1000x — audit 2026-07-06 §3.3.
     const config = PROVIDER_CONFIGS.anthropic;
-    result.savings = result.cacheRead * config.readDiscount * 0.003; // ~$3/M input
+    result.savings = result.cacheRead * config.readDiscount * (3.00 / 1_000_000);
   } else if (provider === 'openai') {
     // OpenAI reports cached tokens in the prompt_tokens_details
     const details = usage.prompt_tokens_details || {};

@@ -34,7 +34,7 @@ export { tracker, router, compressor, cache, budget, observability, promptCache,
  * 4. Compress context (dedup + tiers + reorder + trim)
  * 5. Record trace for observability
  */
-export function optimize({ prompt, currentModel, context, agent, operation }) {
+export function optimize({ prompt, currentModel, context, agent, operation, system, tools, previousTools }) {
   const startTime = Date.now();
   const result = {
     model: currentModel,
@@ -43,7 +43,26 @@ export function optimize({ prompt, currentModel, context, agent, operation }) {
     compression: null,
     savings: 0,
     trace: null,
+    enforcement: {
+      mutablePrompt: null,     // CLAUDE.md A5 — detectMutablePrompt()
+      toolSchema: null,        // CLAUDE.md A6 — detectToolSchemaInstability()
+      compressionDecision: null, // CLAUDE.md A3/A7 — evaluateCompressVsCache()
+    },
   };
+
+  // ── Enforcement (CLAUDE.md Section A) — run BEFORE anything is sent ──
+  // A5: no mutable state in the stable prefix. Caller passes the system
+  // prompt when available; detection also increments cacheMonitor invalidations.
+  if (system) {
+    result.enforcement.mutablePrompt = cacheMonitor.detectMutablePrompt(
+      typeof system === 'string' ? system : JSON.stringify(system)
+    );
+  }
+
+  // A6: tool schema stability vs previous request (deterministic serialization).
+  if (tools && previousTools) {
+    result.enforcement.toolSchema = cacheMonitor.detectToolSchemaInstability(previousTools, tools);
+  }
   
   // Step 1: Check cache
   const cached = cache.lookup(prompt, currentModel);
@@ -78,10 +97,46 @@ export function optimize({ prompt, currentModel, context, agent, operation }) {
   const routing = router.estimateSavings(prompt, currentModel);
   result.savings = routing.savings;
   
-  // Step 3: Compress context if provided
+  // Step 3: Compress context if provided — GATED by the compress-vs-cache
+  // heuristic (CLAUDE.md A3/A7) and the B2 signal-destruction guard.
   if (context && context.length > 0) {
-    const { messages, stats } = compressor.compressContext(context);
-    result.compression = stats;
+    const charLen = (m) =>
+      typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length;
+    const tokensBefore = Math.round(context.reduce((s, m) => s + charLen(m), 0) / 4);
+
+    // Trial compression (not yet applied).
+    const trial = compressor.compressContext(context);
+    const tokensAfter = Math.round(trial.stats.finalChars / 4);
+    const tokensSaved = tokensBefore - tokensAfter;
+
+    // A3/A7: provider-matched heuristic decides compress vs leave padding.
+    const decision = cacheMonitor.evaluateCompressVsCache({ tokensAfter, tokensSaved });
+    result.enforcement.compressionDecision = decision;
+
+    // B2: >95% compression ratio = presumptive signal destruction — never apply.
+    const ratioTooHigh = parseFloat(trial.stats.compressionRatio) > 95;
+
+    if (decision.action === 'compress' && !ratioTooHigh) {
+      result.compression = trial.stats;
+      result.compressedContext = trial.messages;
+      // A3: every applied compression logs its shift + heuristic outcome.
+      cacheMonitor.recordCompressionShift({
+        messagesBefore: context.length,
+        messagesAfter: trial.messages.length,
+        tokensSaved,
+        tokensAfter,
+      });
+    } else {
+      // leave_padding / skip_compression / B2 guard: send context unmodified.
+      result.compression = {
+        skipped: true,
+        action: ratioTooHigh ? 'b2_ratio_guard' : decision.action,
+        reason: ratioTooHigh
+          ? `compressionRatio ${trial.stats.compressionRatio}% > 95 (CLAUDE.md B2)`
+          : decision.reason,
+      };
+      result.compressedContext = context;
+    }
   }
   
   // Step 4: Record trace
