@@ -1,0 +1,198 @@
+/**
+ * TokenVault — Real-time token usage tracker
+ * 
+ * Tracks tokens per session, task, model, and operation type.
+ * Stores data locally in JSON for the CLI dashboard.
+ */
+
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+
+const DATA_DIR = path.join(os.homedir(), '.hermes', 'tokenvault');
+const USAGE_FILE = path.join(DATA_DIR, 'usage.json');
+const DAILY_FILE = path.join(DATA_DIR, 'daily.json');
+
+// Model pricing (per 1M tokens)
+const MODEL_PRICING = {
+  // Premium
+  'claude-sonnet-4': { input: 3.00, output: 15.00 },
+  'claude-opus-4': { input: 15.00, output: 75.00 },
+  'gpt-4o': { input: 2.50, output: 10.00 },
+  'gpt-4-turbo': { input: 10.00, output: 30.00 },
+  // Mid-tier
+  'claude-haiku': { input: 0.25, output: 1.25 },
+  'gpt-4o-mini': { input: 0.15, output: 0.60 },
+  'gemini-1.5-pro': { input: 1.25, output: 5.00 },
+  // Cheap
+  'deepseek-v3': { input: 0.27, output: 1.10 },
+  'deepseek-v4-flash': { input: 0.07, output: 0.28 },
+  'gemini-1.5-flash': { input: 0.075, output: 0.30 },
+  'gpt-4o-mini-fast': { input: 0.15, output: 0.60 },
+  // Free/ultra-cheap
+  'llama-3.1-8b': { input: 0.05, output: 0.20 },
+  'mistral-7b': { input: 0.05, output: 0.20 },
+};
+
+let usage = { sessions: {}, daily: {}, totals: { input: 0, output: 0, cost: 0 } };
+let currentSession = null;
+
+function ensureDir() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function loadUsage() {
+  ensureDir();
+  try {
+    if (fs.existsSync(USAGE_FILE)) {
+      usage = JSON.parse(fs.readFileSync(USAGE_FILE, 'utf8'));
+    }
+  } catch { /* fresh start */ }
+  return usage;
+}
+
+function saveUsage() {
+  ensureDir();
+  fs.writeFileSync(USAGE_FILE, JSON.stringify(usage, null, 2));
+}
+
+function getModelCost(model, inputTokens, outputTokens) {
+  const pricing = MODEL_PRICING[model] || MODEL_PRICING['claude-sonnet-4']; // default fallback
+  return (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000;
+}
+
+/**
+ * Start tracking a new session
+ */
+export function startSession(sessionId) {
+  loadUsage();
+  currentSession = sessionId || `s_${Date.now()}`;
+  if (!usage.sessions[currentSession]) {
+    usage.sessions[currentSession] = {
+      start: new Date().toISOString(),
+      models: {},
+      operations: [],
+      totalInput: 0,
+      totalOutput: 0,
+      totalCost: 0,
+    };
+  }
+  return currentSession;
+}
+
+/**
+ * Record a token usage event
+ */
+export function recordUsage({ model, inputTokens, outputTokens, operation, cached = false }) {
+  if (!currentSession) startSession();
+  
+  const cost = cached ? 0 : getModelCost(model, inputTokens, outputTokens);
+  const saved = cached ? getModelCost(model, inputTokens, outputTokens) : 0;
+  
+  // Session totals
+  const session = usage.sessions[currentSession];
+  session.totalInput += inputTokens;
+  session.totalOutput += outputTokens;
+  session.totalCost += cost;
+  
+  // Per-model breakdown
+  if (!session.models[model]) {
+    session.models[model] = { input: 0, output: 0, cost: 0, calls: 0 };
+  }
+  session.models[model].input += inputTokens;
+  session.models[model].output += outputTokens;
+  session.models[model].cost += cost;
+  session.models[model].calls++;
+  
+  // Operation log
+  session.operations.push({
+    time: Date.now(),
+    model,
+    input: inputTokens,
+    output: outputTokens,
+    cost,
+    saved,
+    operation: operation || 'unknown',
+    cached,
+  });
+  
+  // Daily totals
+  const today = new Date().toISOString().split('T')[0];
+  if (!usage.daily[today]) {
+    usage.daily[today] = { input: 0, output: 0, cost: 0, saved: 0, calls: 0 };
+  }
+  usage.daily[today].input += inputTokens;
+  usage.daily[today].output += outputTokens;
+  usage.daily[today].cost += cost;
+  usage.daily[today].saved += saved;
+  usage.daily[today].calls++;
+  
+  // Grand totals
+  usage.totals.input += inputTokens;
+  usage.totals.output += outputTokens;
+  usage.totals.cost += cost;
+  usage.totals.saved = (usage.totals.saved || 0) + saved;
+  
+  saveUsage();
+  
+  return { cost, saved, total: session.totalCost };
+}
+
+/**
+ * Get current session stats
+ */
+export function getSessionStats() {
+  if (!currentSession) return null;
+  loadUsage();
+  return usage.sessions[currentSession] || null;
+}
+
+/**
+ * Get daily stats
+ */
+export function getDailyStats(days = 7) {
+  loadUsage();
+  const result = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().split('T')[0];
+    result.push({
+      date: key,
+      ...(usage.daily[key] || { input: 0, output: 0, cost: 0, saved: 0, calls: 0 }),
+    });
+  }
+  return result.reverse();
+}
+
+/**
+ * Get totals
+ */
+export function getTotals() {
+  loadUsage();
+  return usage.totals;
+}
+
+/**
+ * Estimate cost for a given model and token counts (without recording)
+ */
+export function estimateCost(model, inputTokens, outputTokens) {
+  return getModelCost(model, inputTokens, outputTokens);
+}
+
+/**
+ * Get model pricing info
+ */
+export function getModelPricing() {
+  return MODEL_PRICING;
+}
+
+export default {
+  startSession,
+  recordUsage,
+  getSessionStats,
+  getDailyStats,
+  getTotals,
+  estimateCost,
+  getModelPricing,
+};
