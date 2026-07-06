@@ -8,6 +8,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { calculateCost } from './pricing.js';
 
 const DATA_DIR = path.join(os.homedir(), '.hermes', 'tokenvault');
 const USAGE_FILE = path.join(DATA_DIR, 'usage.json');
@@ -56,10 +57,7 @@ function saveUsage() {
   fs.writeFileSync(USAGE_FILE, JSON.stringify(usage, null, 2));
 }
 
-function getModelCost(model, inputTokens, outputTokens) {
-  const pricing = MODEL_PRICING[model] || MODEL_PRICING['claude-sonnet-4']; // default fallback
-  return (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000;
-}
+// calculateCost replaced by calculateCost from pricing.js
 
 /**
  * Start tracking a new session
@@ -86,8 +84,8 @@ export function startSession(sessionId) {
 export function recordUsage({ model, inputTokens, outputTokens, operation, cached = false }) {
   if (!currentSession) startSession();
   
-  const cost = cached ? 0 : getModelCost(model, inputTokens, outputTokens);
-  const saved = cached ? getModelCost(model, inputTokens, outputTokens) : 0;
+  const cost = cached ? 0 : calculateCost(model, inputTokens, outputTokens);
+  const saved = cached ? calculateCost(model, inputTokens, outputTokens) : 0;
   
   // Session totals
   const session = usage.sessions[currentSession];
@@ -177,7 +175,7 @@ export function getTotals() {
  * Estimate cost for a given model and token counts (without recording)
  */
 export function estimateCost(model, inputTokens, outputTokens) {
-  return getModelCost(model, inputTokens, outputTokens);
+  return calculateCost(model, inputTokens, outputTokens);
 }
 
 /**

@@ -14,6 +14,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { calculateCost } from "./pricing.js";
 
 const DATA_DIR = path.join(os.homedir(), '.hermes', 'tokenvault');
 const TRACES_DIR = path.join(DATA_DIR, 'traces');
@@ -98,8 +99,8 @@ export function trace({
 }) {
   loadMetrics();
   
-  const cost = cached ? 0 : estimateModelCost(model, inputTokens, outputTokens);
-  const saved = cached ? estimateModelCost(model, inputTokens, outputTokens) : 0;
+  const cost = cached ? 0 : calculateCost(model, inputTokens, outputTokens);
+  const saved = cached ? calculateCost(model, inputTokens, outputTokens) : 0;
   
   // Update global metrics
   metrics.requests++;
@@ -328,20 +329,7 @@ export function getAlertRules() {
 // Helpers
 // ═══════════════════════════════════════════════════════════
 
-function estimateModelCost(model, inputTokens, outputTokens) {
-  const PRICING = {
-    'claude-sonnet-4': { input: 3.00, output: 15.00 },
-    'claude-opus-4': { input: 15.00, output: 75.00 },
-    'gpt-4o': { input: 2.50, output: 10.00 },
-    'claude-haiku': { input: 0.25, output: 1.25 },
-    'gpt-4o-mini': { input: 0.15, output: 0.60 },
-    'deepseek-v3': { input: 0.27, output: 1.10 },
-    'deepseek-v4-flash': { input: 0.07, output: 0.28 },
-    'gemini-1.5-flash': { input: 0.075, output: 0.30 },
-  };
-  const p = PRICING[model] || PRICING['claude-sonnet-4'];
-  return (inputTokens * p.input + outputTokens * p.output) / 1_000_000;
-}
+// calculateCost replaced by calculateCost from pricing.js
 
 export default {
   trace,

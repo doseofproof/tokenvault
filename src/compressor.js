@@ -40,7 +40,7 @@ const DEFAULT_CONFIG = {
   longTermSize: 50,        // L2: Older messages (heavily compressed)
   
   // Reordering
-  reorderEnabled: true,
+  reorderEnabled: false,  // Disabled by default — breaks OpenAI/NIM prefix caching
   highValuePatterns: [
     /\berror\b/i, /\bbug\b/i, /\bcritical\b/i, /\bimportant\b/i,
     /\bkey\b/i, /\bdecision\b/i, /\bconclusion\b/i, /\bresult\b/i,

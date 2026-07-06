@@ -9,6 +9,7 @@
  * - Medium tasks (code review, analysis) → mid-tier models  
  * - Hard tasks (architecture, complex reasoning) → premium models
  */
+import { calculateCost } from "./pricing.js";
 
 // Task complexity classification
 const COMPLEXITY_PATTERNS = {
@@ -155,8 +156,8 @@ export function estimateSavings(prompt, currentModel) {
   const inputTokens = 2000;
   const outputTokens = 1000;
   
-  const currentCost = getApproxCost(currentModel, inputTokens, outputTokens);
-  const newCost = getApproxCost(targetModel, inputTokens, outputTokens);
+  const currentCost = calculateCost(currentModel, inputTokens, outputTokens);
+  const newCost = calculateCost(targetModel, inputTokens, outputTokens);
   
   return {
     savings: currentCost - newCost,
@@ -167,26 +168,7 @@ export function estimateSavings(prompt, currentModel) {
   };
 }
 
-function getApproxCost(model, input, output) {
-  // Import pricing from tracker
-  const PRICING = {
-    'claude-sonnet-4': { input: 3.00, output: 15.00 },
-    'claude-opus-4': { input: 15.00, output: 75.00 },
-    'gpt-4o': { input: 2.50, output: 10.00 },
-    'gpt-4-turbo': { input: 10.00, output: 30.00 },
-    'claude-haiku': { input: 0.25, output: 1.25 },
-    'gpt-4o-mini': { input: 0.15, output: 0.60 },
-    'gemini-1.5-pro': { input: 1.25, output: 5.00 },
-    'deepseek-v3': { input: 0.27, output: 1.10 },
-    'deepseek-v4-flash': { input: 0.07, output: 0.28 },
-    'gemini-1.5-flash': { input: 0.075, output: 0.30 },
-    'gpt-4o-mini-fast': { input: 0.15, output: 0.60 },
-    'llama-3.1-8b': { input: 0.05, output: 0.20 },
-    'mistral-7b': { input: 0.05, output: 0.20 },
-  };
-  const p = PRICING[model] || PRICING['claude-sonnet-4'];
-  return (input * p.input + output * p.output) / 1_000_000;
-}
+// calculateCost replaced by calculateCost from pricing.js
 
 /**
  * Update config
