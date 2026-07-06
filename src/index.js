@@ -19,8 +19,9 @@ import compressor from './compressor.js';
 import cache from './cache.js';
 import budget from './budget.js';
 import observability from './observability.js';
+import promptCache from './promptCache.js';
 
-export { tracker, router, compressor, cache, budget, observability };
+export { tracker, router, compressor, cache, budget, observability, promptCache };
 
 /**
  * Process a prompt through the full optimization pipeline
