@@ -14,9 +14,10 @@
 const COMPLEXITY_PATTERNS = {
   // Premium tier — needs the best (checked FIRST)
   hard: [
-    /\barchitect/i, /\bdesign\b.*\bsystem\b/i, /\bsecurity\b.*\baudit\b/i,
-    /\balgorithm\b.*\boptimi/i, /\bdistributed\b.*\bsystem\b/i,
-    /\bdatabase\b.*\bmigrat/i, /\btrade.?offs?\b/i, /\brace\b.*\bcondition\b/i,
+    /\barchitect/i, /\bdesign\b.*\b(system|schema|database|architecture)\b/i,
+    /\bsecurity\b.*\baudit\b/i, /\balgorithm\b.*\boptimi/i,
+    /\bdistributed\b.*\bsystem\b/i, /\bdatabase\b.*\bmigrat/i,
+    /\btrade.?offs?\b/i, /\brace\b.*\bcondition\b/i,
     /\bcritical\b.*\breasoning/i, /\bcomplex\b.*\b(reasoning|logic|problem)\b/i,
     /\bwrite\b.*\bnovel\b/i, /\bcreative\b.*\bwriting\b.*\blong/i,
     /\bmulti.?step\b.*\breasoning/i, /\bmath\b.*\bproof\b/i,
@@ -25,6 +26,8 @@ const COMPLEXITY_PATTERNS = {
     /\boptimize\b.*\bperformance\b.*\bcritical/i,
     /\bexplain\b.*\bwhy\b.*\b(different|better|worse)/i,
     /\bcompare\b.*\b(trade|approach|method)/i,
+    /\bimplications?\b/i, /\bpropose\b.*\barchitectural/i,
+    /\bcomprehensive\b.*\b(test|review|audit|analysis)/i,
   ],
   // Mid tier — needs good reasoning (checked SECOND)
   medium: [
@@ -34,10 +37,13 @@ const COMPLEXITY_PATTERNS = {
     /\bplan\b/i, /\bstrateg/i, /\bimplement\b/i, /\bbuild\b.*\bfeature\b/i,
     /\bfix\b.*\bbug\b/i, /\btranslate\b.*\bcode\b/i,
     /\bsql\b.*\bquery\b/i, /\bapi\b.*\bdesign\b/i,
-    /\breview\b/i, /\berror\b/i, /\bfunction\b/i, /\bmodule\b/i,
+    /\breview\b/i, /\bfunction\b/i, /\bmodule\b/i,
     /\bexplain\b.*\bhow\b/i, /\bhow\b.*\bdoes\b/i,
-    /\bwrite\b.*\btest/i, /\bcreate\b.*\bscript/i,
-    /\bmodify\b/i, /\bupdate\b/i, /\bchange\b.*\bcode/i,
+    /\bwrite\b.*\btest/i, /\bcreate\b.*\b(script|dashboard|monitoring|system)/i,
+    /\bmodify\b/i, /\bchange\b.*\bcode/i,
+    /\bunderstand\b/i, /\bwhy\b.*\bhappening/i, /\bwhat\b.*\bmean\b/i,
+    /\bpull\b.*\brequest\b/i, /\bimplement\b.*\b(caching|layer|system)/i,
+    /\bconfigure\b/i, /\bsetup\b/i, /\bdeploy\b/i,
   ],
   // Cheap tier — simple tasks (checked LAST)
   simple: [
@@ -45,10 +51,11 @@ const COMPLEXITY_PATTERNS = {
     /\bfind\b.*\bfile\b/i, /\bwhat\b.*\bis\b/i,
     /\blist\b/i, /\bstatus\b/i, /\bcheck\b/i, /\bverify\b/i,
     /\brename\b/i, /\bmove\b.*\bfile\b/i,
-    /\bgit\b.*\bstatus\b/i, /\bgit\b.*\blog\b/i,
+    /\bgit\b.*\b(status|log|commit|push|pull|diff)\b/i,
     /\bconvert\b.*\bjson\b/i, /\bsimple\b/i, /\bquick\b/i,
     /\bhello\b/i, /\bhi\b/i, /\bthanks\b/i, /\byes\b/i, /\bno\b/i, /\bok\b/i,
     /\btype\b/i, /\bcat\b/i, /\bls\b/i, /\bfind\b/i,
+    /\bhello\b/i, /\bprint\b/i, /\becho\b/i, /\bdate\b/i,
   ],
 };
 

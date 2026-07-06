@@ -183,6 +183,9 @@ function summarizeMessage(msg) {
 function applyMemoryTiers(messages) {
   const total = messages.length;
   
+  // Skip compression for small contexts (< 10 messages)
+  if (total < 10) return messages;
+  
   // Split into tiers
   const l0 = messages.slice(-config.workingMemorySize);                           // Last N — verbatim
   const l1Start = Math.max(0, total - config.sessionMemorySize);
