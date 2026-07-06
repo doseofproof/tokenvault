@@ -165,7 +165,7 @@ export function recordCacheWrite({ provider, tokens }) {
  * Track compression-induced cache invalidation
  * When compressor.js fires and shifts context, it invalidates cache
  */
-export function recordCompressionShift({ messagesBefore, messagesAfter, tokensSaved }) {
+export function recordCompressionShift({ messagesBefore, messagesAfter, tokensSaved, tokensAfter }) {
   loadMonitor();
   
   monitor.invalidations.compressionShifts++;
@@ -174,14 +174,92 @@ export function recordCompressionShift({ messagesBefore, messagesAfter, tokensSa
     messagesBefore,
     messagesAfter,
     tokensSaved,
+    tokensAfter,
     impact: 'Cache invalidated for all messages after compression breakpoint',
   });
   
   saveMonitor();
   
+  // Compress-vs-cache micro-heuristic
+  const decision = evaluateCompressVsCache({
+    tokensAfter,
+    tokensSaved,
+    provider: 'anthropic', // Default to Anthropic
+  });
+  
   return {
     invalidations: monitor.invalidations.compressionShifts,
-    recommendation: 'Re-anchor cache_control markers after compression',
+    recommendation: decision.recommendation,
+    decision: decision.action,
+  };
+}
+
+/**
+ * Compress-vs-cache micro-heuristic
+ * 
+ * The threshold collision: compressor.js truncates context to save tokens,
+ * but if it drops below 1024 tokens, the request loses Anthropic's 90% cache
+ * discount. This function decides whether to compress or leave padding.
+ * 
+ * Strategy:
+ * - If tokensAfter >= 1024: compress (savings from compression > cache benefit)
+ * - If tokensAfter < 1024 AND tokensAfter > 800: leave padding (close to threshold)
+ * - If tokensAfter < 800: compress (too small for cache to matter anyway)
+ * - If tokensSaved < 200: skip compression (not worth the cache invalidation)
+ */
+export function evaluateCompressVsCache({ tokensAfter, tokensSaved, provider = 'anthropic' }) {
+  const CACHE_THRESHOLD = 1024;
+  const NEAR_THRESHOLD = 800; // If within 200 tokens of threshold, leave padding
+  const MIN_SAVINGS_FOR_COMPRESS = 200; // Minimum tokens saved to justify compression
+  
+  // If compression doesn't save much, skip it (avoid cache invalidation)
+  if (tokensSaved < MIN_SAVINGS_FOR_COMPRESS) {
+    return {
+      action: 'skip_compression',
+      reason: `Only ${tokensSaved} tokens saved — not worth invalidating cache`,
+      recommendation: `Skip compression: ${tokensSaved} tokens saved < ${MIN_SAVINGS_FOR_COMPRESS} threshold`,
+      savingsImpact: 0,
+    };
+  }
+  
+  // If we're comfortably above threshold, compress
+  if (tokensAfter >= CACHE_THRESHOLD) {
+    return {
+      action: 'compress',
+      reason: `${tokensAfter} tokens after compression — safely above ${CACHE_THRESHOLD} threshold`,
+      recommendation: `Compress: ${tokensSaved} tokens saved, ${tokensAfter} remaining`,
+      savingsImpact: tokensSaved,
+    };
+  }
+  
+  // If we're near the threshold but above minimum, leave padding
+  if (tokensAfter >= NEAR_THRESHOLD && tokensAfter < CACHE_THRESHOLD) {
+    const potentialCacheSavings = CACHE_THRESHOLD * 0.003 * 0.9; // ~$0.0027 per request
+    return {
+      action: 'leave_padding',
+      reason: `${tokensAfter} tokens is within 200 of ${CACHE_THRESHOLD} threshold — leave padding for cache hit`,
+      recommendation: `Skip compression: keep ${CACHE_THRESHOLD}+ tokens to maintain 90% cache discount`,
+      savingsImpact: potentialCacheSavings,
+      potentialCacheSavings,
+    };
+  }
+  
+  // If we're well below threshold, cache doesn't apply anyway — compress
+  if (tokensAfter < NEAR_THRESHOLD) {
+    return {
+      action: 'compress',
+      reason: `${tokensAfter} tokens is below cache threshold — cache won't apply anyway`,
+      recommendation: `Compress: ${tokensAfter} tokens too small for cache benefit`,
+      savingsImpact: tokensSaved,
+    };
+  }
+  
+  // Default: compress
+  return {
+    action: 'compress',
+    reason: 'Default to compression',
+    recommendation: `Compress: ${tokensSaved} tokens saved`,
+    savingsImpact: tokensSaved,
   };
 }
 
