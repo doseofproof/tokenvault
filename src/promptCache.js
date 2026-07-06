@@ -61,54 +61,15 @@ const PROVIDER_CONFIGS = {
  * so we cache everything up to the user's message.
  */
 export function buildAnthropicMessages({ system, messages, tools }) {
-  const result = { system: [], messages: [], cacheMarkers: [] };
-  
-  // System prompt — always cacheable
-  if (system) {
-    const systemContent = typeof system === 'string' 
-      ? [{ type: 'text', text: system }]
-      : system;
-    
-    // Mark the last system block as cacheable
-    const lastIdx = systemContent.length - 1;
-    result.system = systemContent.map((block, i) => {
-      if (i === lastIdx) {
-        return { ...block, cache_control: { type: 'ephemeral' } };
-      }
-      return block;
-    });
-    result.cacheMarkers.push({ type: 'system', position: lastIdx });
-  }
-  
-  // Tool definitions — cacheable if present
-  if (tools && tools.length > 0) {
-    const cachedTools = tools.map((tool, i) => {
-      if (i === tools.length - 1) {
-        return { ...tool, cache_control: { type: 'ephemeral' } };
-      }
-      return tool;
-    });
-    result.tools = cachedTools;
-    result.cacheMarkers.push({ type: 'tools', position: tools.length - 1 });
-  }
-  
-  // Messages — cache up to the second-to-last user message
-  // (Last user message is the actual query, should NOT be cached)
-  if (messages && messages.length > 0) {
-    // Find the second-to-last user message
-    const userIndices = messages.map((m, i) => m.role === 'user' ? i : -1).filter(i => i >= 0);
-    const cacheIdx = userIndices.length >= 2 ? userIndices[userIndices.length - 2] : -1;
-    
-    result.messages = messages.map((msg, i) => {
-      if (i === cacheIdx) {
-        return { ...msg, cache_control: { type: 'ephemeral' } };
-      }
-      return msg;
-    });
-    if (cacheIdx >= 0) {
-      result.cacheMarkers.push({ type: 'messages', position: cacheIdx });
-    }
-  }
+  // Use AUTOMATIC caching (top-level cache_control)
+  // System prompt + tools must be >1024 tokens for caching to work
+  const result = {
+    system,
+    messages,
+    tools,
+    cache_control: { type: 'ephemeral' },  // Automatic caching
+    cacheMarkers: [{ type: 'automatic', description: 'System + tools cached automatically' }],
+  };
   
   return result;
 }

@@ -14,55 +14,28 @@ import promptCache, {
 const { PROVIDER_CONFIGS } = promptCache;
 
 describe('Prompt Cache — Anthropic', () => {
-  it('adds cache_control to system prompt', () => {
+  it('uses automatic caching with top-level cache_control', () => {
     const result = buildAnthropicMessages({
       system: 'You are a helpful assistant.',
       messages: [{ role: 'user', content: 'hello' }],
-    });
-    assert.ok(result.system[0].cache_control);
-    assert.equal(result.system[0].cache_control.type, 'ephemeral');
-  });
-
-  it('adds cache_control to last tool', () => {
-    const result = buildAnthropicMessages({
-      system: 'You are helpful.',
-      messages: [{ role: 'user', content: 'hello' }],
-      tools: [
-        { name: 'tool1', description: 'First tool' },
-        { name: 'tool2', description: 'Second tool' },
-      ],
-    });
-    assert.ok(result.tools[1].cache_control);
-    assert.equal(result.tools[1].cache_control.type, 'ephemeral');
-    assert.ok(!result.tools[0].cache_control); // First tool should NOT have cache_control
-  });
-
-  it('adds cache_control to second-to-last user message', () => {
-    const result = buildAnthropicMessages({
-      system: 'You are helpful.',
-      messages: [
-        { role: 'user', content: 'first message' },
-        { role: 'assistant', content: 'response' },
-        { role: 'user', content: 'second message' },
-        { role: 'assistant', content: 'response' },
-        { role: 'user', content: 'third message' },
-      ],
-    });
-    // Second-to-last user message (index 2) should have cache_control
-    assert.ok(result.messages[2].cache_control);
-    // Last message should NOT have cache_control
-    assert.ok(!result.messages[4].cache_control);
-  });
-
-  it('returns cache markers', () => {
-    const result = buildAnthropicMessages({
-      system: 'You are helpful.',
-      messages: [{ role: 'user', content: 'hello' }],
       tools: [{ name: 'tool1', description: 'First tool' }],
     });
-    assert.ok(result.cacheMarkers.length >= 2);
-    assert.ok(result.cacheMarkers.find(m => m.type === 'system'));
-    assert.ok(result.cacheMarkers.find(m => m.type === 'tools'));
+    // Automatic caching: cache_control at request level
+    assert.ok(result.cache_control);
+    assert.equal(result.cache_control.type, 'ephemeral');
+    // System, messages, tools passed through unchanged
+    assert.equal(result.system, 'You are a helpful assistant.');
+    assert.equal(result.messages.length, 1);
+    assert.equal(result.tools.length, 1);
+  });
+
+  it('includes cache markers', () => {
+    const result = buildAnthropicMessages({
+      system: 'You are helpful.',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+    assert.ok(result.cacheMarkers.length > 0);
+    assert.ok(result.cacheMarkers.find(m => m.type === 'automatic'));
   });
 });
 

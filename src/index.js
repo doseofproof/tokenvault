@@ -20,8 +20,9 @@ import cache from './cache.js';
 import budget from './budget.js';
 import observability from './observability.js';
 import promptCache from './promptCache.js';
+import cacheMonitor from './cacheMonitor.js';
 
-export { tracker, router, compressor, cache, budget, observability, promptCache };
+export { tracker, router, compressor, cache, budget, observability, promptCache, cacheMonitor };
 
 /**
  * Process a prompt through the full optimization pipeline
