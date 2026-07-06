@@ -449,6 +449,7 @@ export function resetSession() {
 
 export default {
   recordCacheEvent,
+  evaluateCompressVsCache,
   recordCacheWrite,
   recordCompressionShift,
   detectMutablePrompt,
