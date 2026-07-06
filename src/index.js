@@ -17,8 +17,9 @@ import tracker from './tracker.js';
 import router from './router.js';
 import compressor from './compressor.js';
 import cache from './cache.js';
+import budget from './budget.js';
 
-export { tracker, router, compressor, cache };
+export { tracker, router, compressor, cache, budget };
 
 /**
  * Process a prompt through the optimization pipeline

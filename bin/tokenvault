@@ -278,6 +278,30 @@ switch (cmd) {
     console.log(`${C.yellow}○ TokenVault disabled${C.reset}`);
     break;
   }
+  case 'budget': {
+    const budgetFile = path.join(os.homedir(), '.hermes', 'tokenvault', 'budget.json');
+    let b = { daily: null, weekly: null, monthly: null, alertThreshold: 0.8 };
+    try { if (fs.existsSync(budgetFile)) b = JSON.parse(fs.readFileSync(budgetFile, 'utf8')); } catch {}
+    
+    if (!arg) {
+      console.log(`\n${C.bold}${C.cyan} TOKENVAULT — Budget Status${C.reset}\n`);
+      console.log(` ${C.white}Daily limit:${C.reset}   ${b.daily ? '$' + b.daily.toFixed(2) : 'not set'}`);
+      console.log(` ${C.white}Weekly limit:${C.reset}  ${b.weekly ? '$' + b.weekly.toFixed(2) : 'not set'}`);
+      console.log(` ${C.white}Monthly limit:${C.reset} ${b.monthly ? '$' + b.monthly.toFixed(2) : 'not set'}`);
+      console.log(` ${C.white}Alert at:${C.reset}       ${(b.alertThreshold * 100).toFixed(0)}%\n`);
+    } else {
+      const [key, val] = arg.split('=');
+      if (key && val) {
+        b[key] = parseFloat(val);
+        if (!fs.existsSync(path.dirname(budgetFile))) fs.mkdirSync(path.dirname(budgetFile), { recursive: true });
+        fs.writeFileSync(budgetFile, JSON.stringify(b, null, 2));
+        console.log(`${C.green}✓ Budget set: ${key} = $${parseFloat(val).toFixed(2)}${C.reset}`);
+      } else {
+        console.log(`${C.yellow}Usage: tokenvault budget daily=5.00${C.reset}`);
+      }
+    }
+    break;
+  }
   case 'clear': {
     const dataDir = path.join(os.homedir(), '.hermes', 'tokenvault');
     if (fs.existsSync(path.join(dataDir, 'usage.json'))) fs.unlinkSync(path.join(dataDir, 'usage.json'));

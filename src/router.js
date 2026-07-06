@@ -12,28 +12,43 @@
 
 // Task complexity classification
 const COMPLEXITY_PATTERNS = {
-  // Premium tier — needs the best
+  // Premium tier — needs the best (checked FIRST)
   hard: [
-    /architect/i, /design.*system/i, /refactor.*complex/i, /security.*audit/i,
-    /algorithm.*optimi/i, /distributed.*system/i, /database.*migrat/i,
-    /explain.*why.*different/i, /compare.*trade.?off/i, /debug.*race.*condition/i,
-    /write.*novel/i, /creative.*writing.*long/i, /multi.*step.*reasoning/i,
-    /math.*proof/i, /legal.*analy/i, /financial.*model/i,
+    /\barchitect/i, /\bdesign\b.*\bsystem\b/i, /\bsecurity\b.*\baudit\b/i,
+    /\balgorithm\b.*\boptimi/i, /\bdistributed\b.*\bsystem\b/i,
+    /\bdatabase\b.*\bmigrat/i, /\btrade.?offs?\b/i, /\brace\b.*\bcondition\b/i,
+    /\bcritical\b.*\breasoning/i, /\bcomplex\b.*\b(reasoning|logic|problem)\b/i,
+    /\bwrite\b.*\bnovel\b/i, /\bcreative\b.*\bwriting\b.*\blong/i,
+    /\bmulti.?step\b.*\breasoning/i, /\bmath\b.*\bproof\b/i,
+    /\blegal\b.*\banaly/i, /\bfinancial\b.*\bmodel/i,
+    /\bthreat\b.*\bmodel/i, /\bpenetration\b.*\btest/i,
+    /\boptimize\b.*\bperformance\b.*\bcritical/i,
+    /\bexplain\b.*\bwhy\b.*\b(different|better|worse)/i,
+    /\bcompare\b.*\b(trade|approach|method)/i,
   ],
-  // Mid tier — needs good reasoning
+  // Mid tier — needs good reasoning (checked SECOND)
   medium: [
-    /code.*review/i, /debug/i, /explain.*code/i, /refactor/i, /test.*writ/i,
-    /document/i, /summarize.*long/i, /analyz/i, /compar/i, /research/i,
-    /plan/i, /strateg/i, /implement/i, /build.*feature/i, /fix.*bug/i,
-    /translate.*code/i, /sql.*query/i, /api.*design/i,
+    /\bcode\b.*\breview\b/i, /\bdebug\b/i, /\bexplain\b.*\bcode\b/i,
+    /\brefactor/i, /\btest\b.*\bwrit/i, /\bdocument/i,
+    /\bsummarize\b.*\blong/i, /\banalyz/i, /\bresearch\b/i,
+    /\bplan\b/i, /\bstrateg/i, /\bimplement\b/i, /\bbuild\b.*\bfeature\b/i,
+    /\bfix\b.*\bbug\b/i, /\btranslate\b.*\bcode\b/i,
+    /\bsql\b.*\bquery\b/i, /\bapi\b.*\bdesign\b/i,
+    /\breview\b/i, /\berror\b/i, /\bfunction\b/i, /\bmodule\b/i,
+    /\bexplain\b.*\bhow\b/i, /\bhow\b.*\bdoes\b/i,
+    /\bwrite\b.*\btest/i, /\bcreate\b.*\bscript/i,
+    /\bmodify\b/i, /\bupdate\b/i, /\bchange\b.*\bcode/i,
   ],
-  // Cheap tier — simple tasks
+  // Cheap tier — simple tasks (checked LAST)
   simple: [
-    /format/i, /lint/i, /sort/i, /count/i, /find.*file/i, /what.*is/i,
-    /list/i, /status/i, /check/i, /verify/i, /rename/i, /move.*file/i,
-    /git.*status/i, /git.*log/i, /ls/i, /cat/i, /head/i, /tail/i,
-    /convert.*json/i, /parse/i, /extract/i, /simple/i, /quick/i,
-    /hello/i, /hi/i, /thanks/i, /yes/i, /no/i, /ok/i,
+    /\bformat\b/i, /\blint\b/i, /\bsort\b/i, /\bcount\b/i,
+    /\bfind\b.*\bfile\b/i, /\bwhat\b.*\bis\b/i,
+    /\blist\b/i, /\bstatus\b/i, /\bcheck\b/i, /\bverify\b/i,
+    /\brename\b/i, /\bmove\b.*\bfile\b/i,
+    /\bgit\b.*\bstatus\b/i, /\bgit\b.*\blog\b/i,
+    /\bconvert\b.*\bjson\b/i, /\bsimple\b/i, /\bquick\b/i,
+    /\bhello\b/i, /\bhi\b/i, /\bthanks\b/i, /\byes\b/i, /\bno\b/i, /\bok\b/i,
+    /\btype\b/i, /\bcat\b/i, /\bls\b/i, /\bfind\b/i,
   ],
 };
 
@@ -42,6 +57,8 @@ const MODEL_TIERS = {
   premium: ['claude-sonnet-4', 'claude-opus-4', 'gpt-4o', 'gpt-4-turbo'],
   mid: ['claude-haiku', 'gpt-4o-mini', 'gemini-1.5-pro', 'deepseek-v3'],
   cheap: ['deepseek-v4-flash', 'gemini-1.5-flash', 'gpt-4o-mini-fast', 'llama-3.1-8b', 'mistral-7b'],
+  simple: ['deepseek-v4-flash', 'gemini-1.5-flash', 'gpt-4o-mini-fast', 'llama-3.1-8b', 'mistral-7b'],
+  hard: ['claude-sonnet-4', 'claude-opus-4', 'gpt-4o', 'gpt-4-turbo'],
 };
 
 // Cost per tier (approximate average per 1M tokens)
@@ -76,29 +93,30 @@ export function classifyTask(prompt) {
     if (new RegExp(pattern, 'i').test(text)) return 'simple';
   }
   
-  // Score each tier
-  let scores = { hard: 0, medium: 0, simple: 0 };
+  // Score each tier — but hard wins immediately if matched
+  let hardMatch = false;
+  let mediumMatch = false;
+  let simpleMatch = false;
   
   for (const pattern of COMPLEXITY_PATTERNS.hard) {
-    if (pattern.test(text)) scores.hard++;
+    if (pattern.test(text)) { hardMatch = true; break; }
   }
+  if (hardMatch) return 'hard';
+  
   for (const pattern of COMPLEXITY_PATTERNS.medium) {
-    if (pattern.test(text)) scores.medium++;
+    if (pattern.test(text)) { mediumMatch = true; break; }
   }
+  if (mediumMatch) return 'medium';
+  
   for (const pattern of COMPLEXITY_PATTERNS.simple) {
-    if (pattern.test(text)) scores.simple++;
+    if (pattern.test(text)) { simpleMatch = true; break; }
   }
   
-  // Prompt length heuristic — longer prompts tend to be more complex
+  // Fallback: use prompt length heuristic
   const words = text.split(/\s+/).length;
-  if (words > 200) scores.hard += 2;
-  else if (words > 50) scores.medium += 1;
-  else if (words < 10) scores.simple += 2;
-  
-  // Pick winner
-  if (scores.hard > scores.medium && scores.hard > scores.simple) return 'hard';
-  if (scores.simple > scores.medium && scores.simple > scores.hard) return 'simple';
-  return 'medium';
+  if (words > 200) return 'hard';
+  if (words > 50) return 'medium';
+  return 'simple';
 }
 
 /**
