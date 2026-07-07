@@ -29,6 +29,15 @@ describe('cache-health-check — runner', () => {
     assert.equal(typeof report.escalated_to_dre, 'boolean');
   });
 
+  it('uses the current session window for at_request and divergence when empty', () => {
+    cacheMonitor.resetSession();
+    const { report } = collectHealthReport();
+    assert.equal(report.at_request, 0);
+    assert.equal(report.divergence_vs_observability_pct, 0);
+    const check1 = report.checks.find(c => c.name === '1_confirm_hit_rate');
+    assert.equal(check1.status, 'info');
+  });
+
   it('health score is a number between 0 and 100', () => {
     const { report } = collectHealthReport();
     assert.equal(typeof report.score, 'number');

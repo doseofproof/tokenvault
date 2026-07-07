@@ -40,6 +40,24 @@ import observability from '../src/observability.js';
 
 const TTL_MS = 5 * 60 * 1000; // Anthropic/Nous cache TTL 5m (CLAUDE.md constants #1)
 
+function getWindowedObservability(status) {
+  const sessionRequests = status.session?.requests || 0;
+  if (sessionRequests <= 0) {
+    return { requests: 0, hitRate: 0, mode: 'no_session_requests' };
+  }
+
+  const recent = observability.getTraces(null, sessionRequests);
+  const comparable = recent.filter(t => typeof t.cached === 'boolean');
+  const hits = comparable.filter(t => t.cached).length;
+  const total = comparable.length;
+
+  return {
+    requests: total,
+    hitRate: total > 0 ? (hits / total * 100).toFixed(1) : 0,
+    mode: total > 0 ? 'windowed_recent_traces' : 'no_comparable_traces',
+  };
+}
+
 export function shouldWriteIncident(score) {
   return typeof score === 'number' && score < 50;
 }
@@ -56,19 +74,28 @@ export function collectHealthReport({ systemPromptText = null } = {}) {
   const health = cacheMonitor.getCacheHealth();
   const status = cacheMonitor.getCacheStatus();
   const inv = status.invalidations || {};
+  const sessionRequests = status.session?.requests || 0;
 
-  // C1 step 2: cross-check the two recorders; >10-point divergence = one is skipped.
-  const efficiency = observability.getCacheEfficiency();
+  // C1 step 2: cross-check the two recorders on the same window; >10-point
+  // divergence = one recorder is skipped or counting a different slice.
+  const overallEfficiency = observability.getCacheEfficiency();
+  const windowedEfficiency = getWindowedObservability(status);
   const monitorRate = parseFloat(health.hitRate) || 0;
-  const obsRate = parseFloat(efficiency.hitRate) || 0;
-  const divergence = Math.round(Math.abs(monitorRate - obsRate) * 10) / 10;
+  const obsRate = parseFloat(windowedEfficiency.hitRate) || 0;
+  const divergence = sessionRequests > 0
+    ? Math.round(Math.abs(monitorRate - obsRate) * 10) / 10
+    : 0;
 
   const checks = [];
 
   // B1 check 1 — confirm the number.
   checks.push(runCheck('1_confirm_hit_rate', () => ({
-    status: monitorRate >= 70 ? 'pass' : monitorRate >= 50 ? 'warning' : monitorRate >= 30 ? 'degraded' : 'critical',
-    detail: `cacheMonitor hitRate ${health.hitRate}, score ${health.score}; observability hitRate ${efficiency.hitRate}% (divergence ${divergence}pt${divergence > 10 ? ' — RECORDER SKIPPED, flag it' : ''})`,
+    status: sessionRequests === 0
+      ? 'info'
+      : monitorRate >= 70 ? 'pass' : monitorRate >= 50 ? 'warning' : monitorRate >= 30 ? 'degraded' : 'critical',
+    detail: sessionRequests === 0
+      ? `no current-window requests recorded — hit-rate grading deferred; historical observability remains ${overallEfficiency.hitRate}% overall`
+      : `cacheMonitor hitRate ${health.hitRate}, score ${health.score}; windowed observability hitRate ${windowedEfficiency.hitRate}% over ${windowedEfficiency.requests} traces (divergence ${divergence}pt${divergence > 10 ? ' — RECORDER SKIPPED, flag it' : ''})`,
   })));
 
   // B1 check 2 — mutable prompts.
@@ -123,7 +150,7 @@ export function collectHealthReport({ systemPromptText = null } = {}) {
   // Exact C1 output shape (CLAUDE.md Section C1 step 4).
   const report = {
     skill: 'cache-health-check',
-    at_request: observability.getMetrics().requests || 0,
+    at_request: sessionRequests,
     health: health.health,
     score: health.score,
     hit_rate_pct: monitorRate,

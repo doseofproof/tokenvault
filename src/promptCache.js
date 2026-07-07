@@ -1,3 +1,5 @@
+import { buildOpenAIMessages as buildCanonicalOpenAIMessages } from './openaiCache.js';
+
 /**
  * TokenVault — Provider-Level Prompt Caching
  * 
@@ -107,27 +109,13 @@ export function buildAnthropicMessages({ system, messages, tools }) {
  * 3. We track cache命中率 in usage responses
  */
 export function buildOpenAIMessages({ system, messages, tools }) {
-  const result = { messages: [], cacheOptimized: true };
-  
-  // System message — keep it stable for caching
-  if (system) {
-    result.messages.push({
-      role: 'system',
-      content: typeof system === 'string' ? system : JSON.stringify(system),
-    });
-  }
-  
-  // Messages — keep prefix stable
-  if (messages) {
-    result.messages.push(...messages);
-  }
-  
-  // Tools — keep them stable
-  if (tools) {
-    result.tools = tools;
-  }
-  
-  return result;
+  // Keep promptCache.js and openaiCache.js on one canonical implementation so
+  // prefix ordering and tool serialization cannot drift between call sites.
+  const result = buildCanonicalOpenAIMessages({ system, tools, messages });
+  return {
+    ...result,
+    cacheOptimized: result._cacheOptimized,
+  };
 }
 
 /**
@@ -164,7 +152,8 @@ export function parseCacheUsage(response, provider) {
     result.cacheHit = result.cacheRead > 0;
     
     const config = PROVIDER_CONFIGS.openai;
-    result.savings = result.cacheRead * config.readDiscount * 0.0025; // ~$2.50/M input
+    // $2.50 per 1M input tokens => 2.50 / 1_000_000 per token.
+    result.savings = result.cacheRead * config.readDiscount * (2.50 / 1_000_000);
   }
   
   return result;

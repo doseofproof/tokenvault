@@ -403,6 +403,22 @@ export function getCacheHealth() {
   
   const hitRate = parseFloat(monitor.session.hitRate);
   const totalInvalidations = Object.values(monitor.invalidations).reduce((a, b) => a + b, 0);
+  const requests = monitor.session.totalRequests || 0;
+
+  if (requests === 0) {
+    return {
+      health: totalInvalidations > 0 ? 'warning' : 'healthy',
+      score: totalInvalidations > 0 ? 80 : 100,
+      hitRate: hitRate + '%',
+      invalidations: totalInvalidations,
+      recommendations: [
+        'No session requests yet — collect a fresh cacheable window before grading hit rate',
+        ...(monitor.invalidations.mutablePrompts > 0 ? ['Move mutable content after stable prefix'] : []),
+        ...(monitor.invalidations.toolSchemaChanges > 0 ? ['Determinize tool schema serialization'] : []),
+        ...(monitor.invalidations.compressionShifts > 0 ? ['Re-anchor cache_control after compression'] : []),
+      ],
+    };
+  }
   
   let health = 'healthy';
   let score = 100;
@@ -442,6 +458,17 @@ export function resetSession() {
     cacheWrites: 0,
     totalSavings: 0,
     hitRate: 0,
+  };
+  monitor.byProvider = {
+    anthropic: { requests: 0, hits: 0, misses: 0, writes: 0, savings: 0 },
+    openai: { requests: 0, hits: 0, misses: 0, writes: 0, savings: 0 },
+    nous: { requests: 0, hits: 0, misses: 0, writes: 0, savings: 0 },
+    xai: { requests: 0, hits: 0, misses: 0, writes: 0, savings: 0 },
+  };
+  monitor.invalidations = {
+    compressionShifts: 0,
+    mutablePrompts: 0,
+    toolSchemaChanges: 0,
   };
   monitor.recentEvents = [];
   saveMonitor();

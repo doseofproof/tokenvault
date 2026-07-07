@@ -4,7 +4,15 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { evaluateCompressVsCache, recordCompressionShift, getCacheStatus, getCacheHealth } from '../src/cacheMonitor.js';
+import {
+  evaluateCompressVsCache,
+  recordCompressionShift,
+  getCacheStatus,
+  getCacheHealth,
+  resetSession,
+  detectMutablePrompt,
+  detectToolSchemaInstability,
+} from '../src/cacheMonitor.js';
 
 describe('Compress-vs-Cache Heuristic', () => {
   it('compresses when safely above threshold', () => {
@@ -77,5 +85,34 @@ describe('Cache Health', () => {
     assert.ok(health.health);
     assert.ok(typeof health.score === 'number');
     assert.ok(Array.isArray(health.recommendations));
+  });
+
+  it('does not mark a zero-request window critical', () => {
+    resetSession();
+    const health = getCacheHealth();
+    assert.ok(['healthy', 'warning'].includes(health.health));
+    assert.ok(health.score >= 80);
+    assert.ok(health.recommendations.some(r => r.includes('No session requests yet')));
+  });
+
+  it('resetSession clears invalidations so B1 uses one window', () => {
+    detectMutablePrompt('timestamp: 2026-07-06T17:00:00 session_id: abc-123');
+    detectToolSchemaInstability([{ name: 'alpha' }], [{ name: 'beta' }]);
+    recordCompressionShift({
+      messagesBefore: 10,
+      messagesAfter: 5,
+      tokensSaved: 300,
+      tokensAfter: 1400,
+    });
+
+    resetSession();
+    const status = getCacheStatus();
+    assert.deepEqual(status.invalidations, {
+      compressionShifts: 0,
+      mutablePrompts: 0,
+      toolSchemaChanges: 0,
+    });
+    assert.equal(status.session.requests, 0);
+    assert.deepEqual(status.byProvider, []);
   });
 });

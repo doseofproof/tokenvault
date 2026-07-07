@@ -68,6 +68,21 @@ describe('Prompt Cache — OpenAI', () => {
     assert.ok(result.cacheOptimized);
   });
 
+  it('uses canonical deterministic tool ordering', () => {
+    const result = buildOpenAIMessages({
+      system: 'You are helpful.',
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [
+        { name: 'z_tool', description: 'Z' },
+        { name: 'a_tool', description: 'A' },
+      ],
+    });
+    assert.equal(result.tools[0].function.name, 'a_tool');
+    assert.equal(result.tools[1].function.name, 'z_tool');
+    assert.ok(result._cacheOptimized);
+    assert.ok(typeof result._estimatedTokens === 'number');
+  });
+
   it('includes tools', () => {
     const result = buildOpenAIMessages({
       system: 'You are helpful.',
@@ -118,6 +133,9 @@ describe('Prompt Cache — Usage Parsing', () => {
     assert.equal(result.cacheRead, 600);
     assert.ok(result.cacheHit);
     assert.ok(result.savings > 0);
+    assert.ok(result.savings < 600 * (2.50 / 1_000_000),
+      `savings $${result.savings} exceeds full cached-token cost — unit bug`);
+    assert.ok(Math.abs(result.savings - 0.00075) < 1e-9);
   });
 
   it('handles missing usage', () => {
