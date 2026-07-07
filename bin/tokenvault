@@ -151,6 +151,11 @@ function showRoute(prompt) {
   const model = selectModel(prompt, 'claude-sonnet-4');
   const savingsPct = tier === 'simple' ? '~90%' : tier === 'medium' ? '~70%' : '~0%';
   
+  if (JSON_MODE) {
+    console.log(JSON.stringify({ prompt: prompt.substring(0, 200), tier, model, savingsPct }));
+    return;
+  }
+  
   console.log(`\n${C.bold}${C.cyan} TOKENVAULT — Route Analysis${C.reset}\n`);
   console.log(` ${C.white}Prompt:${C.reset}     "${prompt.substring(0, 80)}${prompt.length > 80 ? '...' : ''}"`);
   console.log(` ${C.white}Complexity:${C.reset} ${tier === 'hard' ? C.red : tier === 'medium' ? C.yellow : C.green}${tier}${C.reset}`);
@@ -278,7 +283,9 @@ ${C.dim} Data: ${DATA_DIR}${C.reset}
 // ═══════════════════════════════════════════════════════════
 
 const cmd = process.argv[2] || 'stats';
-const arg = process.argv.slice(3).join(' ');
+const args = process.argv.slice(3);
+const JSON_MODE = args.includes('--json');
+const arg = args.filter(a => a !== '--json').join(' ');
 
 switch (cmd) {
   case 'stats': showStats(); break;
