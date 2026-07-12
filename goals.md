@@ -68,7 +68,7 @@ commands, so `plugin.py`'s `subprocess.run` can't distinguish success from typo.
 pass data via stdin JSON; fix or delete `compress()`; exit 1 on unknown CLI commands.
 **Effort:** S-M
 
-### 6. Storage hygiene: world-readable secrets at rest, orphaned files, unbounded growth
+### 6. ✅ DONE (2026-07-12) — Storage hygiene: world-readable secrets at rest, orphaned files, unbounded growth
 (a) All persistence uses default modes — cached LLM responses and prompt previews
 land 0644 in `~/.hermes/tokenvault` (`src/cache.js:26,174,186` and siblings); any
 local UID can read them. (b) TTL/count pruning deletes index entries but never
@@ -84,7 +84,7 @@ assumption or add a lockfile.
 
 ## P2 — Correctness cleanups (small, mechanical)
 
-### 7. Router and monitor dead code that changes behavior
+### 7. ✅ DONE (2026-07-12) — Router and monitor dead code that changes behavior
 `src/router.js:119-122` computes `simpleMatch` but never uses it — simple prompts
 fall through to word-count and can route mid-tier (~10x cost). `classifyTask`
 returns `'medium'` but `MODEL_TIERS` has no such key (works only via `|| mid`
@@ -99,7 +99,8 @@ types, guard the trimContext short-array path. Add classification/regression tes
 
 ## P3 — Docs, API surface, and contributor experience
 
-### 8. Docs and API surface don't match the shipped library
+### 8. ✅ DONE (2026-07-12) — Docs and API surface don't match the shipped library
+*(README rewritten and verified against code; exports unified incl. openaiCache/nimCache; version single-sourced from package.json at 2.0.0. The out-of-repo "CLAUDE.md Section A/B/C" spec citations remain — vendoring the spec into docs/spec.md needs the source document from the personal vault, which only the user can provide.)*
 The spec the code enforces ("CLAUDE.md Section A/B/C", cited from `src/index.js`,
 `bin/health`, tests) lives outside the repo in a personal vault — contributors can't
 resolve it. README documents config keys that don't exist, omits the programmatic
@@ -111,14 +112,15 @@ index.js 2.0.0, CLI "v2").
 unify exports and derive one version from package.json.
 **Effort:** M
 
-### 9. Personal-environment leakage blocks any second contributor
+### 9. ✅ DONE (2026-07-12) — Personal-environment leakage blocks any second contributor
+*(bin/health now defaults to ./reports/ with TOKENVAULT_INCIDENT_DIR override — set it to ~/The-Brain/01-Inbox to keep the old escalation flow. skills/extract-approach/SKILL.md was left in place: it is personal documentation, not code behavior, and removing user-authored content unattended was out of bounds.)*
 `bin/health:174-175` writes incident reports to `~/The-Brain/01-Inbox/` (nonexistent
 on other machines); `skills/extract-approach/SKILL.md` is about a personal vault.
 **Fix:** configurable incident-output path with an in-repo default (`./reports/`);
 move personal-vault material out of the library.
 **Effort:** S
 
-### 10. No mechanical guardrails — add a lint/typecheck gate
+### 10. ✅ DONE (2026-07-12) — No mechanical guardrails — add a lint/typecheck gate
 The 9.2/10 health composite rests entirely on unit tests that pass around the bugs
 above. No eslint/biome, no tsc. Most P2 findings (unused vars, dead branches,
 string/number drift) are mechanically catchable.

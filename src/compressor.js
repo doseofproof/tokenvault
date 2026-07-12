@@ -16,8 +16,6 @@
  * - Adaptive context compression (arxiv:2603.29193)
  */
 
-import crypto from 'crypto';
-
 const DEFAULT_CONFIG = {
   enabled: true,
   
@@ -81,7 +79,7 @@ function scoreImportance(text) {
   score += Math.log(words.length + 1) * 0.5;
   
   // Code bonus — code blocks are high-value
-  if (/[`{(\[]/.test(text) && /[})\]]/.test(text)) score += 2;
+  if (/[`{([]/.test(text) && /[})\]]/.test(text)) score += 2;
   
   return Math.max(0, score);
 }
@@ -89,16 +87,6 @@ function scoreImportance(text) {
 // ═══════════════════════════════════════════════════════════
 // Semantic Deduplication
 // ═══════════════════════════════════════════════════════════
-
-/**
- * Jaccard similarity between two word sets
- */
-function jaccard(a, b) {
-  let intersection = 0;
-  for (const w of a) if (b.has(w)) intersection++;
-  const union = a.size + b.size - intersection;
-  return union === 0 ? 0 : intersection / union;
-}
 
 /**
  * MinHash-inspired similarity for faster dedup on large contexts
@@ -114,7 +102,7 @@ function minHashSimilarity(words1, words2, numHashes = 64) {
 }
 
 function minHash(wordSet, numHashes) {
-  const signature = new Array(numHashes).fill(Infinity);
+  const signature = Array.from({ length: numHashes }, () => Infinity);
   for (const word of wordSet) {
     for (let i = 0; i < numHashes; i++) {
       const hash = simpleHash(word + i);
@@ -351,10 +339,13 @@ export function trimContext(messages, maxChars) {
   
   if (totalChars <= maxChars) return { messages, trimmed: 0 };
   
-  // Always keep system prompt and last few messages
+  // Always keep system prompt and last few messages. recent/middle are
+  // carved from messages AFTER the system prompt so it can never appear
+  // twice (short-but-huge contexts used to duplicate it).
   const systemPrompt = messages[0];
-  const recent = messages.slice(-config.workingMemorySize);
-  const middle = messages.slice(1, -config.workingMemorySize);
+  const rest = messages.slice(1);
+  const recent = rest.slice(-config.workingMemorySize);
+  const middle = rest.slice(0, -config.workingMemorySize);
   
   const fixedChars = (typeof systemPrompt?.content === 'string' ? systemPrompt.content.length : 0) +
     recent.reduce((s, m) => s + (typeof m.content === 'string' ? m.content.length : 0), 0);

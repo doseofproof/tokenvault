@@ -56,7 +56,7 @@ const COMPLEXITY_PATTERNS = {
     /\bconvert\b.*\bjson\b/i, /\bsimple\b/i, /\bquick\b/i,
     /\bhello\b/i, /\bhi\b/i, /\bthanks\b/i, /\byes\b/i, /\bno\b/i, /\bok\b/i,
     /\btype\b/i, /\bcat\b/i, /\bls\b/i, /\bfind\b/i,
-    /\bhello\b/i, /\bprint\b/i, /\becho\b/i, /\bdate\b/i,
+    /\bprint\b/i, /\becho\b/i, /\bdate\b/i,
   ],
 };
 
@@ -64,6 +64,7 @@ const COMPLEXITY_PATTERNS = {
 const MODEL_TIERS = {
   premium: ['claude-sonnet-4', 'claude-opus-4', 'gpt-4o', 'gpt-4-turbo'],
   mid: ['claude-haiku', 'gpt-4o-mini', 'gemini-1.5-pro', 'deepseek-v3'],
+  medium: ['claude-haiku', 'gpt-4o-mini', 'gemini-1.5-pro', 'deepseek-v3'], // classifyTask returns 'medium'
   cheap: ['deepseek-v4-flash', 'gemini-1.5-flash', 'gpt-4o-mini-fast', 'llama-3.1-8b', 'mistral-7b'],
   simple: ['deepseek-v4-flash', 'gemini-1.5-flash', 'gpt-4o-mini-fast', 'llama-3.1-8b', 'mistral-7b'],
   hard: ['claude-sonnet-4', 'claude-opus-4', 'gpt-4o', 'gpt-4-turbo'],
@@ -112,7 +113,8 @@ export function classifyTask(prompt) {
   for (const pattern of COMPLEXITY_PATTERNS.simple) {
     if (pattern.test(text)) { simpleMatch = true; break; }
   }
-  
+  if (simpleMatch) return 'simple';
+
   // Fallback: use prompt length heuristic
   const words = text.split(/\s+/).length;
   if (words > 200) return 'hard';

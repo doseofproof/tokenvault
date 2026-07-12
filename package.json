@@ -1,6 +1,6 @@
 {
   "name": "tokenvault",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Token optimization plugin for Hermes Agent — track, compress, cache, and save 60-90% on AI costs",
   "type": "module",
   "main": "src/index.js",
@@ -8,9 +8,21 @@
     "tokenvault": "./bin/tokenvault"
   },
   "scripts": {
+    "lint": "oxlint src tests bin/tokenvault bin/health",
+    "pretest": "npm run lint",
     "test": "TOKENVAULT_DATA_DIR=$(mktemp -d) node --test tests/test*.js",
     "test:live": "node --test tests/integration.js"
   },
-  "keywords": ["hermes", "agent", "tokens", "cost", "optimization", "ai"],
-  "license": "MIT"
+  "keywords": [
+    "hermes",
+    "agent",
+    "tokens",
+    "cost",
+    "optimization",
+    "ai"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "oxlint": "^1.73.0"
+  }
 }

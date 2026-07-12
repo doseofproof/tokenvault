@@ -107,7 +107,7 @@ export function buildAnthropicMessages({ system, messages, tools }) {
  * OpenAI's caching is automatic — we just need to ensure:
  * 1. Prompts are >= 1024 tokens
  * 2. Prefixes are stable across requests
- * 3. We track cache命中率 in usage responses
+ * 3. We track cache hit rate in usage responses
  */
 export function buildOpenAIMessages({ system, messages, tools }) {
   // Keep promptCache.js and openaiCache.js on one canonical implementation so

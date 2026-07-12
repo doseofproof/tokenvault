@@ -107,7 +107,7 @@ export function parseNIMResponse(response, previousLatency) {
  * we always prefer caching over compression when possible.
  * Only compress when context exceeds the model's context window.
  */
-export function evaluateNIMCompressVsCache({ tokensAfter, tokensSaved, contextWindow = 131072 }) {
+export function evaluateNIMCompressVsCache({ tokensAfter, contextWindow = 131072 }) {
   // NIM models typically have large context windows
   if (tokensAfter >= contextWindow * 0.8) {
     return {

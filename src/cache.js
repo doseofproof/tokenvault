@@ -23,7 +23,11 @@ let config = {
 };
 
 function ensureDir() {
-  if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
+  if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true, mode: 0o700 });
+}
+
+function safeUnlinkResponse(key) {
+  try { fs.unlinkSync(path.join(CACHE_DIR, `${key}.json`)); } catch { /* already gone */ }
 }
 
 function loadCache() {
@@ -38,18 +42,22 @@ function loadCache() {
 
 function saveCache() {
   ensureDir();
-  // Prune expired entries
+  // Prune expired entries (and their response files)
   const now = Date.now();
   const ttlMs = config.ttlHours * 3600 * 1000;
   for (const [key, entry] of Object.entries(cache)) {
-    if (now - entry.time > ttlMs) delete cache[key];
+    if (now - entry.time > ttlMs) {
+      delete cache[key];
+      safeUnlinkResponse(key);
+    }
   }
-  // Prune by count
+  // Prune by count (and unlink evicted response files)
   const entries = Object.entries(cache).sort((a, b) => b[1].time - a[1].time);
   if (entries.length > config.maxEntries) {
+    for (const [key] of entries.slice(config.maxEntries)) safeUnlinkResponse(key);
     cache = Object.fromEntries(entries.slice(0, config.maxEntries));
   }
-  fs.writeFileSync(CACHE_INDEX, JSON.stringify(cache, null, 2));
+  fs.writeFileSync(CACHE_INDEX, JSON.stringify(cache, null, 2), { mode: 0o600 });
 }
 
 /**
@@ -203,7 +211,7 @@ export function store(prompt, model, response, tokens = {}, context = {}) {
     model,
     tokens,
     cachedAt: new Date().toISOString(),
-  }));
+  }), { mode: 0o600 });
   
   // Update index
   cache[key] = {

@@ -10,7 +10,6 @@ import path from 'path';
 import { DATA_DIR } from './paths.js';
 
 const USAGE_FILE = path.join(DATA_DIR, 'usage.json');
-const DAILY_FILE = path.join(DATA_DIR, 'daily.json');
 
 // Pricing imported from single source (pricing.js)
 import { MODEL_PRICING, calculateCost } from './pricing.js';
@@ -19,7 +18,7 @@ let usage = { sessions: {}, daily: {}, totals: { input: 0, output: 0, cost: 0 } 
 let currentSession = null;
 
 function ensureDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
 }
 
 function loadUsage() {
@@ -34,7 +33,7 @@ function loadUsage() {
 
 function saveUsage() {
   ensureDir();
-  fs.writeFileSync(USAGE_FILE, JSON.stringify(usage, null, 2));
+  fs.writeFileSync(USAGE_FILE, JSON.stringify(usage, null, 2), { mode: 0o600 });
 }
 
 // calculateCost replaced by calculateCost from pricing.js
@@ -82,7 +81,7 @@ export function recordUsage({ model, inputTokens, outputTokens, operation, cache
   session.models[model].cost += cost;
   session.models[model].calls++;
   
-  // Operation log
+  // Operation log (retain last 1000 per session)
   session.operations.push({
     time: Date.now(),
     model,
@@ -93,6 +92,9 @@ export function recordUsage({ model, inputTokens, outputTokens, operation, cache
     operation: operation || 'unknown',
     cached,
   });
+  if (session.operations.length > 1000) {
+    session.operations = session.operations.slice(-1000);
+  }
   
   // Daily totals
   const today = new Date().toISOString().split('T')[0];

@@ -30,8 +30,8 @@ function loadBudget() {
 }
 
 function saveBudget() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(BUDGET_FILE, JSON.stringify(budget, null, 2));
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(BUDGET_FILE, JSON.stringify(budget, null, 2), { mode: 0o600 });
 }
 
 function loadUsage() {

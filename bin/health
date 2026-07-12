@@ -32,7 +32,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 import cacheMonitor from '../src/cacheMonitor.js';
@@ -170,10 +169,12 @@ export function collectHealthReport({ systemPromptText = null } = {}) {
 }
 
 export function writeIncidentNote(report, { inboxDir = null } = {}) {
+  // Portable default: in-repo ./reports. Personal escalation flows set
+  // TOKENVAULT_INCIDENT_DIR (e.g. ~/The-Brain/01-Inbox) instead of the old
+  // hardcoded vault preference.
   const dir = inboxDir
-    || (fs.existsSync(path.join(os.homedir(), 'The-Brain', '01-Inbox'))
-      ? path.join(os.homedir(), 'The-Brain', '01-Inbox')
-      : path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'reports')); // fallback: vault absent (e.g. sandbox)
+    || process.env.TOKENVAULT_INCIDENT_DIR
+    || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'reports');
   fs.mkdirSync(dir, { recursive: true });
   const day = new Date().toISOString().split('T')[0];
   const file = path.join(dir, `tv-cache-incident-${day}.md`); // tv- prefix: avoids .gitignore *token* (PROTOCOL §5)

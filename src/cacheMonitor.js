@@ -4,7 +4,7 @@
  * Surfaces provider-level cache hit rates during live agent loops.
  * Tracks:
  * - Anthropic cache_control effectiveness
- * - OpenAI automatic cache命中率
+ * - OpenAI automatic cache hit rate
  * - Per-request cache savings
  * - Cache invalidation events (compression shifts)
  */
@@ -54,7 +54,7 @@ let monitor = {
 };
 
 function ensureDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
 }
 
 function loadMonitor() {
@@ -70,7 +70,7 @@ function loadMonitor() {
 
 function saveMonitor() {
   ensureDir();
-  fs.writeFileSync(CACHE_MONITOR_FILE, JSON.stringify(monitor, null, 2));
+  fs.writeFileSync(CACHE_MONITOR_FILE, JSON.stringify(monitor, null, 2), { mode: 0o600 });
 }
 
 function addEvent(type, data) {
@@ -104,9 +104,9 @@ export function recordCacheEvent({ provider, cached, tokens, savings }) {
     monitor.session.cacheMisses++;
   }
   
-  // Update hit rate
+  // Update hit rate (number, one decimal)
   monitor.session.hitRate = monitor.session.totalRequests > 0
-    ? (monitor.session.cacheHits / monitor.session.totalRequests * 100).toFixed(1)
+    ? Number((monitor.session.cacheHits / monitor.session.totalRequests * 100).toFixed(1))
     : 0;
   
   // Per-provider
@@ -207,7 +207,7 @@ export function recordCompressionShift({ messagesBefore, messagesAfter, tokensSa
  * - If tokensAfter < 800: compress (too small for cache to matter anyway)
  * - If tokensSaved < 200: skip compression (not worth the cache invalidation)
  */
-export function evaluateCompressVsCache({ tokensAfter, tokensSaved, provider = 'anthropic' }) {
+export function evaluateCompressVsCache({ tokensAfter, tokensSaved }) {
   const CACHE_THRESHOLD = 1024;
   const NEAR_THRESHOLD = 800; // If within 200 tokens of threshold, leave padding
   const MIN_SAVINGS_FOR_COMPRESS = 200; // Minimum tokens saved to justify compression
@@ -346,9 +346,10 @@ function checkAlerts() {
     });
   }
   
-  // Invalidation spike
+  // Invalidation spike — these are the event types addEvent() actually emits
+  const INVALIDATION_EVENTS = new Set(['compression_shift', 'mutable_prompt', 'tool_schema_change']);
   const recentInvalidations = monitor.recentEvents.filter(
-    e => e.type.includes('invalidation') && Date.now() - e.time < 60000
+    e => INVALIDATION_EVENTS.has(e.type) && Date.now() - e.time < 60000
   ).length;
   if (recentInvalidations > monitor.alerts.invalidationSpike) {
     alerts.push({

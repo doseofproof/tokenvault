@@ -12,7 +12,7 @@
  * - Real-time monitoring
  */
 
-import { promptCache, compressor, cache, router, cacheMonitor } from '../src/index.js';
+import { promptCache, router, cacheMonitor } from '../src/index.js';
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 const OPENAI_KEY = process.env.OPENAI_API_KEY;

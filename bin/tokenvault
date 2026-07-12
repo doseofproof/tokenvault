@@ -18,7 +18,6 @@
  *   tokenvault agents         — Per-agent cost breakdown
  *   tokenvault hourly         — Hourly cost trend (24h)
  *   tokenvault alerts         — Recent alerts
- *   tokenvault alert <rule>   — Set alert rule
  */
 
 import fs from 'fs';

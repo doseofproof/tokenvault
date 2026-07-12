@@ -13,6 +13,7 @@
  * - observability: Tracing, metrics, alerting
  */
 
+import { readFileSync } from 'fs';
 import tracker from './tracker.js';
 import router from './router.js';
 import compressor from './compressor.js';
@@ -21,9 +22,14 @@ import budget from './budget.js';
 import observability from './observability.js';
 import promptCache from './promptCache.js';
 import cacheMonitor from './cacheMonitor.js';
+import openaiCache from './openaiCache.js';
+import nimCache from './nimCache.js';
 import { isEnabled } from './paths.js';
 
-export { tracker, router, compressor, cache, budget, observability, promptCache, cacheMonitor };
+// Single version source: package.json
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+
+export { tracker, router, compressor, cache, budget, observability, promptCache, cacheMonitor, openaiCache, nimCache };
 
 /**
  * Process a prompt through the full optimization pipeline
@@ -233,7 +239,7 @@ export function getSavingsReport() {
 
 export default {
   name: 'tokenvault',
-  version: '2.0.0',
+  version: pkg.version,
   optimize,
   record,
   getSavingsReport,
@@ -243,4 +249,8 @@ export default {
   cache,
   budget,
   observability,
+  promptCache,
+  cacheMonitor,
+  openaiCache,
+  nimCache,
 };

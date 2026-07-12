@@ -45,8 +45,8 @@ let alertRules = [
 let alerts = [];
 
 function ensureDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(TRACES_DIR)) fs.mkdirSync(TRACES_DIR, { recursive: true });
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
+  if (!fs.existsSync(TRACES_DIR)) fs.mkdirSync(TRACES_DIR, { recursive: true, mode: 0o700 });
 }
 
 function loadMetrics() {
@@ -61,7 +61,7 @@ function loadMetrics() {
 
 function saveMetrics() {
   ensureDir();
-  fs.writeFileSync(METRICS_FILE, JSON.stringify(metrics, null, 2));
+  fs.writeFileSync(METRICS_FILE, JSON.stringify(metrics, null, 2), { mode: 0o600 });
 }
 
 function loadAlerts() {
@@ -74,7 +74,9 @@ function loadAlerts() {
 
 function saveAlerts() {
   ensureDir();
-  fs.writeFileSync(ALERTS_FILE, JSON.stringify(alerts, null, 2));
+  // Cap retained alerts so alerts.json can't grow unbounded
+  if (alerts.length > 500) alerts = alerts.slice(-500);
+  fs.writeFileSync(ALERTS_FILE, JSON.stringify(alerts, null, 2), { mode: 0o600 });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -139,14 +141,16 @@ export function trace({
     metrics.byOperation[operation].latency = metrics.byOperation[operation].latency * 0.9 + latencyMs * 0.1;
   }
   
-  // Hourly bucket
+  // Hourly bucket (retain last 7 days)
   const hour = new Date().toISOString().replace(/:\d{2}:\d{2}.\d{3}Z$/, ':00:00');
   if (!metrics.hourly[hour]) metrics.hourly[hour] = { requests: 0, tokens: 0, cost: 0, errors: 0 };
   metrics.hourly[hour].requests++;
   metrics.hourly[hour].tokens += inputTokens + outputTokens;
   metrics.hourly[hour].cost += cost;
   if (error) metrics.hourly[hour].errors++;
-  
+  const hourKeys = Object.keys(metrics.hourly).sort();
+  for (const k of hourKeys.slice(0, Math.max(0, hourKeys.length - 168))) delete metrics.hourly[k];
+
   saveMetrics();
   
   // Write trace file
@@ -167,7 +171,7 @@ export function trace({
   };
   
   const traceFile = path.join(TRACES_DIR, `${new Date().toISOString().split('T')[0]}.jsonl`);
-  fs.appendFileSync(traceFile, JSON.stringify(traceEntry) + '\n');
+  fs.appendFileSync(traceFile, JSON.stringify(traceEntry) + '\n', { mode: 0o600 });
   
   // Check alert rules
   checkAlerts(traceEntry);
