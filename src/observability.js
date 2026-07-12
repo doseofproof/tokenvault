@@ -13,10 +13,9 @@
 
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { calculateCost } from "./pricing.js";
+import { DATA_DIR } from './paths.js';
 
-const DATA_DIR = path.join(os.homedir(), '.hermes', 'tokenvault');
 const TRACES_DIR = path.join(DATA_DIR, 'traces');
 const METRICS_FILE = path.join(DATA_DIR, 'metrics.json');
 const ALERTS_FILE = path.join(DATA_DIR, 'alerts.json');

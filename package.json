@@ -8,8 +8,8 @@
     "tokenvault": "./bin/tokenvault"
   },
   "scripts": {
-    "start": "node src/index.js",
-    "test": "node --test tests/*.js"
+    "test": "TOKENVAULT_DATA_DIR=$(mktemp -d) node --test tests/test*.js",
+    "test:live": "node --test tests/integration.js"
   },
   "keywords": ["hermes", "agent", "tokens", "cost", "optimization", "ai"],
   "license": "MIT"

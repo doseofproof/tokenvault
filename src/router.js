@@ -69,13 +69,6 @@ const MODEL_TIERS = {
   hard: ['claude-sonnet-4', 'claude-opus-4', 'gpt-4o', 'gpt-4-turbo'],
 };
 
-// Cost per tier (approximate average per 1M tokens)
-const TIER_COST = {
-  premium: 20.00,
-  mid: 1.50,
-  cheap: 0.15,
-};
-
 let config = {
   enabled: true,
   defaultTier: 'mid',

@@ -1,4 +1,5 @@
 import { buildOpenAIMessages as buildCanonicalOpenAIMessages } from './openaiCache.js';
+import { getPricing } from './pricing.js';
 
 /**
  * TokenVault — Provider-Level Prompt Caching
@@ -140,11 +141,12 @@ export function parseCacheUsage(response, provider) {
     result.cacheRead = usage.cache_read_input_tokens || 0;
     result.cacheHit = result.cacheRead > 0;
     
-    // Calculate savings. $3.00 per 1M input tokens => 3.00 / 1_000_000 per token.
-    // Regression note: this line previously used 0.003 (per-1K rate applied
-    // per-token), overstating savings 1000x — audit 2026-07-06 §3.3.
+    // Savings priced from pricing.js by the response's model (representative
+    // fallback: claude-sonnet-4). Regression note: this previously used 0.003
+    // (per-1K rate applied per-token), overstating savings 1000x — audit 2026-07-06 §3.3.
     const config = PROVIDER_CONFIGS.anthropic;
-    result.savings = result.cacheRead * config.readDiscount * (3.00 / 1_000_000);
+    const inputRate = (getPricing(response.model) || getPricing('claude-sonnet-4')).input / 1_000_000;
+    result.savings = result.cacheRead * config.readDiscount * inputRate;
   } else if (provider === 'openai') {
     // OpenAI reports cached tokens in the prompt_tokens_details
     const details = usage.prompt_tokens_details || {};
@@ -152,8 +154,8 @@ export function parseCacheUsage(response, provider) {
     result.cacheHit = result.cacheRead > 0;
     
     const config = PROVIDER_CONFIGS.openai;
-    // $2.50 per 1M input tokens => 2.50 / 1_000_000 per token.
-    result.savings = result.cacheRead * config.readDiscount * (2.50 / 1_000_000);
+    const inputRate = (getPricing(response.model) || getPricing('gpt-4o')).input / 1_000_000;
+    result.savings = result.cacheRead * config.readDiscount * inputRate;
   }
   
   return result;
@@ -179,7 +181,8 @@ export function estimateCacheSavings({ provider, inputTokens, messagesPerDay = 1
   
   // First request = cache write (full cost)
   // Subsequent requests = cache read (discounted)
-  const costPerToken = provider === 'anthropic' ? 0.000003 : 0.0000025;
+  // Representative model per provider, priced from pricing.js
+  const costPerToken = getPricing(provider === 'anthropic' ? 'claude-sonnet-4' : 'gpt-4o').input / 1_000_000;
   const fullCostPerDay = inputTokens * costPerToken * messagesPerDay;
   const cachedCostPerDay = (inputTokens * costPerToken) + (cacheableTokens * costPerToken * config.readDiscount * (messagesPerDay - 1));
   const savings = fullCostPerDay - cachedCostPerDay;

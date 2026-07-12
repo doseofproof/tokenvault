@@ -23,10 +23,9 @@
 
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { router, observability, compressor } from '../src/index.js';
+import { DATA_DIR } from '../src/paths.js';
 
-const DATA_DIR = path.join(os.homedir(), '.hermes', 'tokenvault');
 const USAGE_FILE = path.join(DATA_DIR, 'usage.json');
 const CACHE_DIR = path.join(DATA_DIR, 'cache');
 const CACHE_INDEX = path.join(CACHE_DIR, 'index.json');
@@ -320,5 +319,5 @@ switch (cmd) {
     break;
   }
   case 'help': case '--help': case '-h': showHelp(); break;
-  default: console.log(`Unknown command: ${cmd}`); showHelp();
+  default: console.log(`Unknown command: ${cmd}`); showHelp(); process.exit(1);
 }

@@ -7,9 +7,8 @@
 
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
+import { DATA_DIR } from './paths.js';
 
-const DATA_DIR = path.join(os.homedir(), '.hermes', 'tokenvault');
 const BUDGET_FILE = path.join(DATA_DIR, 'budget.json');
 const USAGE_FILE = path.join(DATA_DIR, 'usage.json');
 

@@ -21,6 +21,7 @@ import budget from './budget.js';
 import observability from './observability.js';
 import promptCache from './promptCache.js';
 import cacheMonitor from './cacheMonitor.js';
+import { isEnabled } from './paths.js';
 
 export { tracker, router, compressor, cache, budget, observability, promptCache, cacheMonitor };
 
@@ -35,6 +36,21 @@ export { tracker, router, compressor, cache, budget, observability, promptCache,
  * 5. Record trace for observability
  */
 export function optimize({ prompt, currentModel, context, agent, operation, system, tools, previousTools }) {
+  // Kill switch (`tokenvault off`): pass through untouched — no routing,
+  // no caching, no compression, no accounting.
+  if (!isEnabled()) {
+    return {
+      model: currentModel,
+      cached: false,
+      response: null,
+      compression: null,
+      savings: 0,
+      trace: null,
+      enforcement: null,
+      disabled: true,
+    };
+  }
+
   const startTime = Date.now();
   const result = {
     model: currentModel,
@@ -69,26 +85,33 @@ export function optimize({ prompt, currentModel, context, agent, operation, syst
   if (cached) {
     result.cached = true;
     result.response = cached.content;
-    result.savings = tracker.estimateCost(currentModel, 2000, 1000);
-    
+
+    // Savings = the real cost of the call we avoided. Use the token counts
+    // recorded when the entry was stored; estimate from lengths if absent.
+    const hitInputTokens = cached.tokens?.inputTokens
+      || Math.round(prompt.length / 4);
+    const hitOutputTokens = cached.tokens?.outputTokens
+      || Math.round((typeof cached.content === 'string' ? cached.content.length : 0) / 4);
+    result.savings = tracker.estimateCost(currentModel, hitInputTokens, hitOutputTokens);
+
     tracker.recordUsage({
       model: currentModel,
-      inputTokens: 0,
-      outputTokens: 0,
+      inputTokens: hitInputTokens,
+      outputTokens: hitOutputTokens,
       operation: 'cache_hit',
       cached: true,
     });
-    
+
     observability.trace({
       agent,
       model: currentModel,
       operation: operation || 'cache_hit',
-      inputTokens: 0,
-      outputTokens: 0,
+      inputTokens: hitInputTokens,
+      outputTokens: hitOutputTokens,
       latencyMs: Date.now() - startTime,
       cached: true,
     });
-    
+
     return result;
   }
   
@@ -157,6 +180,8 @@ export function optimize({ prompt, currentModel, context, agent, operation, syst
  * Record the outcome of an LLM call
  */
 export function record({ model, inputTokens, outputTokens, operation, response, prompt, agent, latencyMs }) {
+  if (!isEnabled()) return;
+
   tracker.recordUsage({ model, inputTokens, outputTokens, operation });
   
   // Cache the response

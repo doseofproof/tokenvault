@@ -13,7 +13,6 @@ Saves 60-90% on AI costs via:
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
 from typing import Union, Optional, List
 
@@ -45,50 +44,19 @@ def route(prompt: str) -> str:
 
 def compress(context: str, max_chars: int = 30000) -> dict:
     """Compress context using advanced techniques."""
-    # Use the Node.js API directly for compression
-    code = f"""
-import json
-from pathlib import Path
-from typing import Union, Optional, List
-sys.path.insert(0, '{SRC_DIR}')
-from compressor import compressContext
-
-messages = json.loads(sys.stdin.read())
-result = compressContext(messages, {{"maxChars": {max_chars}}})
-print(json.dumps(result["stats"]))
-"""
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        input=context,
-        capture_output=True,
-        text=True,
-        cwd=str(PLUGIN_DIR),
-    )
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return {"error": "Failed to compress"}
+    # The CLI (bin/tokenvault) exposes no 'compress' command, and building
+    # code from inputs is a code-injection risk, so this is unimplemented.
+    # If a compress command is added, call it via run_cli with argv/stdin.
+    return {"error": "not implemented: requires CLI support (no 'compress' command in bin/tokenvault)"}
 
 
 def cache_lookup(prompt: str, model: str) -> dict:
     """Look up a cached response."""
-    code = f"""
-import json, sys
-sys.path.insert(0, '{SRC_DIR}')
-from cache import lookup
-result = lookup("{prompt}", "{model}")
-print(json.dumps(result))
-"""
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        capture_output=True,
-        text=True,
-        cwd=str(PLUGIN_DIR),
-    )
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return {"cached": False}
+    # The CLI (bin/tokenvault) only exposes aggregate cache stats
+    # ('tokenvault cache'), not per-prompt lookup, and building code from
+    # inputs is a code-injection risk, so this is unimplemented.
+    # If a lookup command is added, call it via run_cli with argv/stdin.
+    return {"cached": False, "error": "not implemented: requires CLI support (no cache lookup command in bin/tokenvault)"}
 
 
 def trace(
@@ -101,31 +69,11 @@ def trace(
     cached: bool = False,
 ) -> dict:
     """Record a request trace for observability."""
-    code = f"""
-import json, sys
-sys.path.insert(0, '{SRC_DIR}')
-from observability import trace as trace_fn
-result = trace_fn({{
-    "model": "{model}",
-    "inputTokens": {input_tokens},
-    "outputTokens": {output_tokens},
-    "operation": "{operation}",
-    "agent": "{agent or 'default'}",
-    "latencyMs": {latency_ms},
-    "cached": {str(cached).lower()},
-}})
-print(json.dumps(result))
-"""
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        capture_output=True,
-        text=True,
-        cwd=str(PLUGIN_DIR),
-    )
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return {"error": "Failed to record trace"}
+    # The CLI (bin/tokenvault) only exposes 'tokenvault traces' to display
+    # existing traces; there is no command to record one, and building code
+    # from inputs is a code-injection risk, so this is unimplemented.
+    # If a trace-record command is added, call it via run_cli with argv/stdin.
+    return {"error": "not implemented: requires CLI support (no trace-record command in bin/tokenvault)"}
 
 
 def budget(action: str = "status", key: Optional[str] = None, value: Optional[float] = None) -> str:

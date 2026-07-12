@@ -8,10 +8,10 @@
 
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import crypto from 'crypto';
+import { DATA_DIR } from './paths.js';
 
-const CACHE_DIR = path.join(os.homedir(), '.hermes', 'tokenvault', 'cache');
+const CACHE_DIR = path.join(DATA_DIR, 'cache');
 const CACHE_INDEX = path.join(CACHE_DIR, 'index.json');
 
 let cache = {};

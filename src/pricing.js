@@ -26,19 +26,34 @@ export const MODEL_PRICING = {
   'mistral-7b': { input: 0.05, output: 0.20 },
 };
 
+const warnedUnknown = new Set();
+
 /**
- * Calculate cost for a given model and token counts
+ * Calculate cost for a given model and token counts.
+ * Unknown models cost $0 and warn once per model — never silently
+ * billed at another model's rates.
  */
 export function calculateCost(model, inputTokens, outputTokens) {
-  const pricing = MODEL_PRICING[model] || MODEL_PRICING['claude-sonnet-4'];
+  const pricing = MODEL_PRICING[model];
+  if (!pricing) {
+    if (!warnedUnknown.has(model)) {
+      warnedUnknown.add(model);
+      console.warn(`[tokenvault] unknown model "${model}" — cost recorded as $0; add it to src/pricing.js`);
+    }
+    return 0;
+  }
   return (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000;
 }
 
 /**
- * Get pricing for a model
+ * Get pricing for a model (null if unknown)
  */
 export function getPricing(model) {
-  return MODEL_PRICING[model] || MODEL_PRICING['claude-sonnet-4'];
+  return MODEL_PRICING[model] || null;
 }
 
-export default { MODEL_PRICING, calculateCost, getPricing };
+export function isKnownModel(model) {
+  return model in MODEL_PRICING;
+}
+
+export default { MODEL_PRICING, calculateCost, getPricing, isKnownModel };

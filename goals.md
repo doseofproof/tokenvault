@@ -23,7 +23,7 @@ cache-poisoning primitive.
 0.85 fuzzy path or gate it behind ≥ 0.98 similarity plus an identical context digest.
 **Effort:** M
 
-### 2. Savings accounting is broken end-to-end — cache hits record $0 saved
+### 2. ✅ DONE (2026-07-11) — Savings accounting is broken end-to-end — cache hits record $0 saved
 On a cache hit, `src/index.js:72-90` records `inputTokens: 0, outputTokens: 0`, so
 `tracker.js:68-69` and `observability.js:102-103` compute saved = cost(0,0) = 0.
 `usage.totals.saved`, `tokenvault stats`, and `getSavingsReport()` never increment
@@ -37,7 +37,7 @@ all savings math through pricing.js; flag unknown models explicitly instead of t
 premium fallback. Add an integration test asserting `totals.saved > 0` after a hit.
 **Effort:** M
 
-### 3. `npm test` writes to the live data store and can spend real API money
+### 3. ✅ DONE (2026-07-11) — `npm test` writes to the live data store and can spend real API money
 Five modules hardcode `~/.hermes/tokenvault` with no env override (`src/tracker.js:12`,
 `src/cache.js:14`, `src/budget.js:12`, `src/observability.js:19`, `src/cacheMonitor.js:16`),
 so every test run corrupts real usage/savings numbers (verified live during the audit).
@@ -47,7 +47,7 @@ when keys are exported, and the `tests/*.js` glob includes it.
 tests at a temp dir; move `integration.js` behind a separate `npm run test:live`.
 **Effort:** M
 
-### 4. `tokenvault off` does nothing — the kill switch is never read
+### 4. ✅ DONE (2026-07-11) — `tokenvault off` does nothing — the kill switch is never read
 `bin/tokenvault:309-310` writes `enabled` to `config.json`, but no src module reads
 that file (grep-verified). Disabled users still get silent rerouting and caching.
 **Fix:** load config.json in a shared config module and honor `enabled` in `optimize()`;
@@ -56,7 +56,8 @@ test both states.
 
 ## P1 — Security hardening and known-broken surfaces
 
-### 5. Python plugin: latent code-injection sink and broken-by-construction methods
+### 5. ✅ DONE (2026-07-11) — Python plugin: latent code-injection sink and broken-by-construction methods
+*(Note: the three broken bridge methods now return explicit structured "not implemented" errors — the CLI lacks cache-lookup/trace/compress commands to wire them to; that CLI surface is future work.)*
 `plugin/plugin.py:46-128` interpolates untrusted tool-call params (`prompt`, `model`,
 `agent`, `operation`) via f-strings into `python -c` source. Currently unreachable
 only because the snippets `import` JavaScript files and die on ImportError first —

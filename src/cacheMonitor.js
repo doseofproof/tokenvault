@@ -11,9 +11,9 @@
 
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
+import { getPricing } from './pricing.js';
+import { DATA_DIR } from './paths.js';
 
-const DATA_DIR = path.join(os.homedir(), '.hermes', 'tokenvault');
 const CACHE_MONITOR_FILE = path.join(DATA_DIR, 'cache-monitor.json');
 
 let monitor = {
@@ -234,7 +234,8 @@ export function evaluateCompressVsCache({ tokensAfter, tokensSaved, provider = '
   
   // If we're near the threshold but above minimum, leave padding
   if (tokensAfter >= NEAR_THRESHOLD && tokensAfter < CACHE_THRESHOLD) {
-    const potentialCacheSavings = CACHE_THRESHOLD * 0.003 * 0.9; // ~$0.0027 per request
+    // ~$0.0027 per request at sonnet-4 input rates with the 90% cache discount
+    const potentialCacheSavings = CACHE_THRESHOLD * (getPricing('claude-sonnet-4').input / 1_000_000) * 0.9;
     return {
       action: 'leave_padding',
       reason: `${tokensAfter} tokens is within 200 of ${CACHE_THRESHOLD} threshold — leave padding for cache hit`,

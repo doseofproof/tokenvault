@@ -67,12 +67,13 @@ describe('Regression: pricing single source (audit Bug 2)', () => {
     assert.ok(Math.abs(expected - manual) < 1e-12, `${expected} vs ${manual}`);
   });
 
-  it('unknown model falls back to claude-sonnet-4 rates (documented defect A8)', () => {
-    // This behavior is intentional-but-dangerous; the test pins it so any
-    // change is deliberate. An unpriced model bills at sonnet-4 rates.
-    assert.equal(
-      calculateCost('model-that-does-not-exist', 1000, 1000),
-      calculateCost('claude-sonnet-4', 1000, 1000)
+  it('unknown model costs $0, never another model\'s rates (A8 defect fixed)', () => {
+    // Previously an unpriced model silently billed at sonnet-4 rates
+    // (10-60x misreporting on a typo). Now it records $0 and warns once.
+    assert.equal(calculateCost('model-that-does-not-exist', 1000, 1000), 0);
+    assert.notEqual(
+      calculateCost('claude-sonnet-4', 1000, 1000),
+      0
     );
   });
 });

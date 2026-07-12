@@ -15,6 +15,8 @@
  * 5. Current Turn (variable)
  */
 
+import { getPricing } from './pricing.js';
+
 const OPENAI_CACHE_CONFIG = {
   minTokensForCache: 1024,
   cacheIncrement: 128,
@@ -105,8 +107,8 @@ export function parseOpenAICacheUsage(response) {
   const cachedTokens = details.cached_tokens || 0;
   const totalPromptTokens = usage.prompt_tokens || 0;
   
-  // Calculate savings
-  const costPerToken = 0.0025 / 1000; // ~$2.50/M for gpt-4o
+  // Savings priced from pricing.js by the response's model (fallback: gpt-4o)
+  const costPerToken = (getPricing(response?.model) || getPricing('gpt-4o')).input / 1_000_000;
   const fullCost = totalPromptTokens * costPerToken;
   const cachedCost = cachedTokens * costPerToken * OPENAI_CACHE_CONFIG.readDiscount;
   const savings = fullCost - cachedCost;
