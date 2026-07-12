@@ -1,0 +1,7 @@
+{
+  "model": "claude-fable-5",
+  "prompt": "Reply with exactly this sentence and nothing else: TokenVault canary baseline is stable.",
+  "max_tokens": 24,
+  "fingerprint": "<run: python3 canary/verifier.py --capture>",
+  "sample": "<first 200 chars of the golden response, filled by --capture>"
+}

@@ -1,0 +1,36 @@
+name: model-canary
+
+on:
+  schedule:
+    - cron: "30 7 * * *" # daily, 30 min before the nightly loop
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: model-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe model fingerprint
+        id: probe
+        run: python3 canary/verifier.py
+
+      - name: Commit DRIFT flag
+        if: failure() && steps.probe.outcome == 'failure'
+        run: |
+          if [ -f DRIFT ]; then
+            git config user.name "tokenvault-canary[bot]"
+            git config user.email "tokenvault-canary@users.noreply.github.com"
+            git add DRIFT
+            git commit -m "canary: model drift detected — halting nightly loop"
+            git push origin HEAD:main
+          fi

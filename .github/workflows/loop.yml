@@ -1,0 +1,48 @@
+name: nightly-loop
+
+on:
+  schedule:
+    - cron: "0 8 * * *" # nightly, 08:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-loop
+  cancel-in-progress: false
+
+jobs:
+  loop:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_MODEL: claude-fable-5
+      CLAUDE_REASONING_EFFORT: high
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Halt if drift flagged
+        run: |
+          if [ -f DRIFT ]; then
+            echo "DRIFT file present — loop halted pending human review." >&2
+            cat DRIFT >&2
+            exit 1
+          fi
+
+      - name: Verify no canary drift
+        run: python3 canary/verifier.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Configure git identity
+        run: |
+          git config user.name "tokenvault-loop[bot]"
+          git config user.email "tokenvault-loop@users.noreply.github.com"
+
+      - name: Run headless loop payload
+        run: bash run.sh
