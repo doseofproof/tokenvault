@@ -12,7 +12,7 @@ history (no secrets), no lint or typecheck gate.
 
 ## P0 — Correctness and integrity of the core product claims
 
-### 1. Cache can serve a different prompt's answer across agent contexts (HIGH, security + correctness)
+### 1. ✅ DONE (2026-07-11) — Cache can serve a different prompt's answer across agent contexts (HIGH, security + correctness)
 The cache key is sha256 of `model::prompt` only (`src/cache.js:58-64`) — it ignores
 `system`, `tools`, `context`, and `agent`. On an exact miss, a Jaccard ≥ 0.85 fuzzy
 fallback (`src/cache.js:125-157`) returns a *different* prompt's stored response.

@@ -81,7 +81,7 @@ export function optimize({ prompt, currentModel, context, agent, operation, syst
   }
   
   // Step 1: Check cache
-  const cached = cache.lookup(prompt, currentModel);
+  const cached = cache.lookup(prompt, currentModel, { system, tools, agent });
   if (cached) {
     result.cached = true;
     result.response = cached.content;
@@ -179,14 +179,14 @@ export function optimize({ prompt, currentModel, context, agent, operation, syst
 /**
  * Record the outcome of an LLM call
  */
-export function record({ model, inputTokens, outputTokens, operation, response, prompt, agent, latencyMs }) {
+export function record({ model, inputTokens, outputTokens, operation, response, prompt, agent, latencyMs, system, tools }) {
   if (!isEnabled()) return;
 
   tracker.recordUsage({ model, inputTokens, outputTokens, operation });
-  
-  // Cache the response
+
+  // Cache the response, keyed to the context it was generated under
   if (response && prompt) {
-    cache.store(prompt, model, response, { inputTokens, outputTokens });
+    cache.store(prompt, model, response, { inputTokens, outputTokens }, { system, tools, agent });
   }
   
   // Record trace

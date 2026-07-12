@@ -53,11 +53,29 @@ function saveCache() {
 }
 
 /**
- * Generate cache key from prompt + model
+ * Digest of the request context (system prompt, tool config, agent).
+ * Two requests only share cache entries when this digest matches —
+ * a response generated under one system prompt / tool set / agent
+ * must never be served to another.
  */
-function cacheKey(prompt, model) {
+function contextDigest(context = {}) {
+  const canonical = JSON.stringify({
+    system: context.system ?? null,
+    tools: context.tools ?? null,
+    agent: context.agent ?? null,
+  });
+  return crypto.createHash('sha256')
+    .update(canonical)
+    .digest('hex')
+    .substring(0, 16);
+}
+
+/**
+ * Generate cache key from prompt + model + context digest
+ */
+function cacheKey(prompt, model, ctxDigest) {
   const hash = crypto.createHash('sha256')
-    .update(`${model}::${prompt}`)
+    .update(`${model}::${ctxDigest}::${prompt}`)
     .digest('hex')
     .substring(0, 16);
   return hash;
@@ -90,16 +108,23 @@ function jaccard(a, b) {
   return union === 0 ? 0 : intersection / union;
 }
 
+// Semantic fallback threshold. 0.98 (near-identical keyword sets) — the old
+// 0.85 served materially different prompts' responses. Candidates must also
+// share the exact context digest; see contextDigest().
+const SEMANTIC_MATCH_THRESHOLD = 0.98;
+
 /**
- * Look up a cached response (exact match first, then semantic similarity)
+ * Look up a cached response (exact match first, then semantic similarity).
+ * `context` = { system, tools, agent } — entries are isolated per context.
  */
-export function lookup(prompt, model) {
+export function lookup(prompt, model, context = {}) {
   if (!config.enabled) return null;
-  
+
   loadCache();
-  
+
   // Step 1: Exact match
-  const key = cacheKey(prompt, model);
+  const ctxDigest = contextDigest(context);
+  const key = cacheKey(prompt, model, ctxDigest);
   const entry = cache[key];
   
   if (entry) {
@@ -129,15 +154,16 @@ export function lookup(prompt, model) {
   
   for (const [k, e] of Object.entries(cache)) {
     if (e.model !== model) continue; // Same model only
-    
+    if (e.contextKey !== ctxDigest) continue; // Same system/tools/agent context only
+
     const age = Date.now() - e.time;
     if (age > config.ttlHours * 3600 * 1000) continue;
-    
+
     const entryFp = e.fingerprint || '';
     if (!entryFp) continue;
-    
+
     const score = jaccard(queryFp, entryFp);
-    if (score > bestScore && score > 0.85) { // 85% similarity threshold
+    if (score > bestScore && score >= SEMANTIC_MATCH_THRESHOLD) {
       bestScore = score;
       bestMatch = k;
     }
@@ -162,12 +188,13 @@ export function lookup(prompt, model) {
 /**
  * Store a response in cache
  */
-export function store(prompt, model, response, tokens = {}) {
+export function store(prompt, model, response, tokens = {}, context = {}) {
   if (!config.enabled) return;
   if (!response || response.length > config.maxResponseChars) return;
-  
+
   loadCache();
-  const key = cacheKey(prompt, model);
+  const ctxDigest = contextDigest(context);
+  const key = cacheKey(prompt, model, ctxDigest);
   
   // Store response to file
   const responsePath = path.join(CACHE_DIR, `${key}.json`);
@@ -181,6 +208,7 @@ export function store(prompt, model, response, tokens = {}) {
   // Update index
   cache[key] = {
     model,
+    contextKey: ctxDigest, // Isolates entries per system/tools/agent context
     time: Date.now(),
     hits: 0,
     promptPreview: prompt.substring(0, 100),
